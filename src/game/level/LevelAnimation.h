@@ -81,6 +81,10 @@ private:
 struct AnimTextKeyCounters {
     u32 barrels = 0, beams = 0;
 };
+// orig: dwords 0x002E9E08 / 0x002E9E0C (.bss, 0 at start): process globals, never reset by a level load (only native
+// 390 ResetBarrelsAndBeams 0x000B0D88 clears them; level2-6 is the only script that uses them). The tests reset them
+// per scenario, as a new oracle process has them.
+inline AnimTextKeyCounters g_animTextKeyCounters;
 
 // orig: 0x000BAC00 FireTextKeys + 0x000B0A90 OnTextKey: the reference controller's keys in (a, b] (wrapping).
 void FireTextKeys(ni::NiSequence* seq, f32 a, f32 b, AnimTextKeyCounters& counters);
@@ -100,7 +104,7 @@ public:
     void ApplyPose(const AnimCullCamera* camera);    // Session::Render's loop (0x000C9229)
 
     std::vector<std::unique_ptr<LevelAnimation>> list;
-    AnimTextKeyCounters counters;
+    AnimTextKeyCounters& counters = g_animTextKeyCounters;   // (the process globals, not the level's)
 };
 
 }  // namespace fut::level

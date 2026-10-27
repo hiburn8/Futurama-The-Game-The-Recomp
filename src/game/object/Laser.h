@@ -13,9 +13,10 @@
 // deletion; the beam Init of a laser without a model (the NiTriStrips quads, object_gaps.md 21.1), the
 // destructable hit (vf64) and the sounds (the attached loop and its stop, the impact sounds).
 //
-// NOT PORTED (reported when reached): the Projectile's sphere sweep (D+0x54 > 0), the ProjectileExplosion, its
-// scorch marks; the trigger / moveable impacts (with the 0x80 object's sound), labelled projectiles' impacts, the
-// laser's fire trail, the camera shake, LaserShock; the beam's rendering.
+// NOT PORTED (reported when reached; all unreachable with the shipped definitions, KNOWN_ISSUES #45 / #52): the
+// Projectile's sphere sweep (D+0x54 > 0: no writer), Projectile::Explode's scorch marks (D+0x64 != 1: only LaserDef
+// writes it, and a Laser never calls 0x00079E70), the laser's / RailLaser's D+0x86 explosion and D+0x88 shock (no
+// writer).
 #pragma once
 
 #include "engine/ni/NiCollision.h"

@@ -1878,19 +1878,16 @@ bool Call(const NativeInfo& n, VmAddr a) {
         if (game::Player* p = g_level->player; p && p->chicken) p->chicken->AddRockets(Get(a));
         return true;
     case 390:                                         // ResetBarrelsAndBeams (inline 0x000B0D88)
-        if (g_level->animations) g_level->animations->counters = {};   // (per level in the port: KNOWN_ISSUES #39)
+        level::g_animTextKeyCounters = {};            // 0x002E9E0C / 0x002E9E08 = 0 (process globals)
         return true;
     case 142:                                         // (unnamed) Script_CallNative's case 0x000B186E: the dword 1
         Set(a, 1);
         return true;
     case 391:                                         // PopBeamCount 0x000B0380 (dword)
     case 392: {                                       // PopBarrelCount 0x000B03A0
-        u32 r = 0;
-        if (g_level->animations) {
-            u32& c = n.method == 391 ? g_level->animations->counters.beams : g_level->animations->counters.barrels;
-            r = c;
-            if (c) --c;
-        }
+        u32& c = n.method == 391 ? level::g_animTextKeyCounters.beams : level::g_animTextKeyCounters.barrels;
+        const u32 r = c;                              // 0x002E9E0C / 0x002E9E08: 0 stays 0, else returned, then -1
+        if (c) --c;
         Set(a, r);
         return true;
     }

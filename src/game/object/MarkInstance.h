@@ -4,8 +4,9 @@
 // docs/analysis/player_spawn_deps.md 2. The marks it places (ScorchMark: the projectiles' impacts) and their per-frame
 // code: docs/analysis/fireball_port.md 9.2.
 //
-// NOT PORTED: the instance's own Tick 0x00072E90 -> 0x00065E20; the marks' render state is built (the quad and its
-// six properties) but not drawn.
+// The instance's own Tick 0x00072E90 jumps to EffectInstance::Tick 0x00065E20 (its Owner's objects: none, the marks
+// are spawned with the instance's owner; then time += the frame step): GameObject::Tick 0x000630D0 does the same.
+// The marks are drawn (render oracle level5-3_railgun: the railgun's stage-hit mark).
 #pragma once
 
 #include "game/object/GameObject.h"

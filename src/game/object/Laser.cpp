@@ -825,8 +825,11 @@ void Laser::FindHealthTrigger() {                     // orig: 0x00077DC0 (the l
         if (t.kind != ScriptTrigger::Health) continue;
         if (!(t.health > 0.0f)) continue;             // FCOMP 0; TEST AH,0x41; JNE skip (NaN skips)
         bool may = true;
-        if (owner && owner->IsOwnerType(4))           // (owner - 0x38)->def vf0C(2) ? +0x65 : +0x64
-            NotPorted("Laser: a weapon's projectile (an inventory owner, 0x00077E18)");
+        if (owner && owner->IsOwnerType(4)) {         // 0x00077E18: (owner - 0x38)->def vf0C(2) ? +0x65 : +0x64
+            // (as the Projectile's 0x0007A864; unreached: every Laser spawn passes the session as its owner)
+            const Character& holder = static_cast<Character::Inventory*>(owner)->holder;
+            if (!(holder.def->IsType(2) ? t.flag65 : t.flag64)) may = false;   // BL = 0 (the shooter test still runs)
+        }
         if (shooter && shooter->def->IsType(1)) {
             if (!(shooter->def->IsType(2) ? t.flag65 : t.flag64)) continue;
         }

@@ -4,8 +4,8 @@
 // the laser (0x000789A8), the crocodile and the HighPriest. Decompiled from default.xbe;
 // docs/analysis/inventory_batch1_port.md 4.3.
 //
-// The stencil property's fields stay at the port's defaults (as the scorch marks', MarkInstance.cpp). The quad's blocks are not
-// mirrored in the game heap (KNOWN_ISSUES #39 style).
+// The stencil property is the inline constructor's (NiStencilProperty's 0x00026B60 fields, then +0x18 = 0, +0x34 = 3, as
+// the scorch marks', MarkInstance.cpp). The quad's blocks are not mirrored in the game heap (KNOWN_ISSUES #39 style).
 #pragma once
 
 #include "game/object/GameObject.h"

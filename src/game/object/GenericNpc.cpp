@@ -545,7 +545,18 @@ void AiAgent::ClearIntents() {                        // orig: 0x0002CB10
     character->moveY = character->moveX = character->strafe = 0;   // +0x4DC / +0x4D8 / +0x4E0
     character->attack1 = character->attack2 = character->b508 = character->b509 = 0;   // +0x506..+0x509
     if (npc) npc->goalHeight = 0.0f;                  // +0x7C8
-    if (player) NotPorted("AiAgent::ClearIntents: the player block 0x0002CB8E");
+    if (Player* p = player) {                         // orig: 0x0002CB8E: the player's own input state (A+0x880)
+        p->thinkVel = {0.0f, 0.0f, 0.0f};             // +0xB48 = NiPoint3::ZERO DAT_002F915C (3 dword copies)
+        p->roll98 = 0;                                // +0xB98
+        p->roll95 = p->roll96 = p->roll97 = 0;        // +0xB95 / +0xB96 / +0xB97
+        p->b44 = 0.0f;                                // +0xB44 (a dword 0)
+        p->b8B = 0;                                   // +0xB8B
+        p->jumpRequest = 0;                           // +0xB89
+        p->attack1 = p->attack2 = 0;                  // +0x506 / +0x507 (again, through +0x880)
+        p->special50A = p->special50B = p->special50C = 0;   // +0x50A..+0x50C
+        p->xValue = p->aValue = 0.0f;                 // +0xB34 / +0xB30 (dword 0s)
+        p->actionBits = 0;                            // +0xBA0 (a word store)
+    }
     if (b80 && event.kind != 0xF) b80 = 0;
 }
 
@@ -555,7 +566,11 @@ bool AiAgent::Tick() {                                // orig: 0x0002ECB0 (reach
         seq248.loop = 0;
         if (event.kind == 0 || event.kind == 0xE) event = seq248.Next();
         if (event.kind == 9) event = seq248.Current();
-        if (event.kind != 0) NotPorted("AiAgent::Tick: a player command 0x0002ED38");
+        if (event.kind != 0) {                        // orig: 0x0002ED38: a scripted command (level3-4's room intros)
+            ClearIntents();                           // 0x0002CB10 (ecx kept)
+            (void)Process();                          // 0x0002E9C0 (the result is dropped)
+            level.aiBlind = 1;                        // byte DAT_002DBB40 = 1
+        }
         return false;
     }
     if (!npc) return true;
@@ -814,10 +829,7 @@ void AiAgent::State3() {                              // orig: 0x0002F720
     ClearIntents();
     b1B4 = 0;
     smCount = 0;
-    if (!npc) {
-        NotPorted("AiAgent::State3: no NPC 0x0002FDCB");
-        return;
-    }
+    if (!npc) return;                                 // orig: 0x0002F748 -> 0x0002FDCB (the epilogue)
     if (event.kind == 0 || event.kind == 0xE) event = seq668.Next();
     if (event.kind == 5) Process();
     bool keep = true;
@@ -1148,13 +1160,23 @@ f32 AiAgent::Steer(const NiPoint3& goal) {            // orig: 0x0002D4D0
             return 0.0f;
         }
     }
-    if (!npc) {
-        // 0x0002D85D: camera-relative intents from S+0x8C's rotation (a player agent's Goto)
-        NotPorted("AiAgent::Steer: a player agent (camera-relative intents 0x0002D85D)");
-        return f1B0 > 0.0f ? FLT_MAX : l18;
-    }
     f32& my = character->moveY;                       // ch+0x4DC
-    if (f1B0 > 0.0f) {                                // TEST AH,0x41; JNE
+    if (!npc) {
+        // orig: 0x0002D85D (both f1B0 branches): a player agent's Goto: the direction in the scene camera's frame
+        // ((S+0x8C)+0x30 +0x30: its local rotation, 12 dwords copied), forward = R X, side = R Z (0x00011770 with
+        // 0x002D77E0 / 0x002D77F8); the stick words are the dot products (z, y, x order); walking (A+0x1AA == 0) halves
+        // them ([0x00293AA0] 0.5f)
+        ni::NiMatrix3 r{};
+        if (level.camera && level.camera->sceneCamera) r = level.camera->sceneCamera->local.rotate;
+        const NiPoint3 fw = ni::MulVector(r, {1, 0, 0});
+        const NiPoint3 sd = ni::MulVector(r, {0, 0, 1});
+        my = F((double(fw.z) * dir.z + double(fw.y) * dir.y) + double(fw.x) * dir.x);
+        character->moveX = F((double(sd.z) * dir.z + double(sd.y) * dir.y) + double(sd.x) * dir.x);
+        if (!playerRun) {
+            my = F(double(my) * 0.5f);
+            character->moveX = F(double(character->moveX) * 0.5f);
+        }
+    } else if (f1B0 > 0.0f) {                         // TEST AH,0x41; JNE
         const double n = 1.0 / std::sqrt((double(dir.z) * dir.z + double(dir.y) * dir.y) + double(dir.x) * dir.x);
         (void)TurnToDir({F(double(dir.x) * n), F(double(dir.y) * n), F(double(dir.z) * n)});
         my = 1.0f;
@@ -2108,10 +2130,16 @@ void GenericNpc::UpdateAnimation(f32 dt) {            // orig: 0x00048190 (the r
                 }
             }
             animUpdated = 0;                          // 0x0004846C (then AnimTick and return)
-        } else if (body->supported && (velBefore.y < -40.0f || IsAnimPlaying(0x1C)) && SeqById(0x1D))
-            NotPorted("GenericNpc::UpdateAnimation: landing 0x000484AD");
-        else if (v.y < -50.0f && SeqById(0x1C)) NotPorted("GenericNpc::UpdateAnimation: falling 0x000484F7");
-        else if (IsAnimPlaying(0x1D) && !finished) {
+        } else if (body->supported && (velBefore.y < -40.0f || IsAnimPlaying(0x1C)) && SeqById(0x1D)) {
+            // 0x00048481: body vf48; +0x4E8 < -40 [0x0029764C] (TEST AH,5; JNP) or falling 0x1C playing; then the
+            // landing 0x1D (0x00033E00) is played (pushes 0, 1, 0, 1, 0x1D) -> +0x9F = 0, AnimTick, return
+            PlayAnimById(0x1D, true, false, true, 0.0f);   // 0x000484C6 -> 0x0003CE70
+            animUpdated = 0;                          // 0x000484D1
+        } else if (v.y < -50.0f && SeqById(0x1C)) {  // 0x000484E6: FCOMP [0x00297648]; TEST AH,5; JP (NaN: no)
+            PlayAnimById(0x1C, true, false, false, 0.0f);   // 0x00048510 (pushes 0, 0, 0, 1, 0x1C): falling
+            animUpdated = 0;                          // 0x0004851B
+        } else if (IsAnimPlaying(0x1D) && !finished) {   // 0x00048530: the landing still runs -> 0x00048466
+            animUpdated = 0;                          // 0x0004846C (+0x9F = 0)
         } else if (b7C1 || b7BD || b7C0) {            // 0x0004854B / 0x000485F2 / 0x00048699 (in this order)
             u8& flag = b7C1 ? b7C1 : b7BD ? b7BD : b7C0;
             const s32 anim = b7C1 ? 0x63 : b7BD ? 0x68 : 0x64;

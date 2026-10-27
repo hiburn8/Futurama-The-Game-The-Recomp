@@ -9,7 +9,8 @@
 // player, rising 3 units a second from 12 above where it started while following the player's x / z, fading out by
 // 1 - t / 2 and pulsing in size with |sin(0.8 t)| + 1; it ends after 2.0 (its clock runs at twice the frame step).
 //
-// The stencil properties' fields stay at the port's defaults (as the ripples' and scorch marks').
+// The stencil properties are the inline constructor's (NiStencilProperty's 0x00026B60 fields, then +0x18 = 0, +0x34 = 3,
+// as the ripples' and scorch marks').
 #pragma once
 
 #include "game/object/GameObject.h"
