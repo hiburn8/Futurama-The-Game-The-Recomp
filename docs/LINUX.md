@@ -58,7 +58,11 @@ LD_LIBRARY_PATH=/path/to/dxvk/usr/lib "$PWD/build-linux/FuturamaRecomp" \
   --saves /path/to/new-scratch-directory --frames 300
 ```
 
-The save directory must not exist; its parent must exist. This preview deliberately
+For `--saves`, the directory must not exist and its parent must exist. A later
+process can explicitly use `--resume-saves` with that same directory. Resume requires
+the preview marker, refuses symlink roots/markers and locks the directory against
+concurrent preview writers. It is a test-session boundary, not a player-data migration
+or a guarantee of game-save durability. This preview deliberately
 uses fresh scratch saves. Do not use existing player saves: upstream's save signature
 is not compatible with original Xbox saves. `--frames` bounds a smoke run; omit it
 for an interactive run. A controller is currently required for game input.

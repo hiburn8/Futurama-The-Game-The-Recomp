@@ -157,6 +157,10 @@ if(NOT WIN32)
     endif()
     include(CTest)
     if(BUILD_TESTING)
+        add_executable(fut_preview_saves_test tests/preview_saves.cpp)
+        target_include_directories(fut_preview_saves_test PRIVATE app/linux)
+        add_test(NAME preview_save_session COMMAND fut_preview_saves_test
+                 "${CMAKE_CURRENT_BINARY_DIR}/preview-save-test")
         add_executable(fut_save_storage_test tests/save_storage.cpp src/game/app/SaveStorage.cpp)
         target_include_directories(fut_save_storage_test PRIVATE src)
         add_test(NAME save_storage_read_errors COMMAND fut_save_storage_test

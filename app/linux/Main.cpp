@@ -1,5 +1,6 @@
 // Native Linux bring-up host. No launcher, Wine runtime or game data is embedded.
 #include <SDL3/SDL.h>
+#include "PreviewSaves.h"
 #include "core/XbeImage.h"
 #include "platform/common/MovieService.h"
 #include "platform/common/GameSoundBackend.h"
@@ -47,8 +48,8 @@ fut::input::GamepadState ReadPad(SDL_Gamepad* gamepad) {
 }
 
 int Run(int argc, char** argv) {
-    if (argc < 6 || std::string(argv[2]) != "--shaders" || std::string(argv[4]) != "--saves") {
-        std::fprintf(stderr, "usage: FuturamaRecomp DATA --shaders DIR --saves SCRATCH_DIR [--frames N]\n");
+    if (argc < 6 || std::string(argv[2]) != "--shaders" || (std::string(argv[4]) != "--saves" && std::string(argv[4]) != "--resume-saves")) {
+        std::fprintf(stderr, "usage: FuturamaRecomp DATA --shaders DIR (--saves NEW_DIR | --resume-saves PREVIEW_DIR) [--frames N]\n");
         return 2;
     }
     int frames = 0;
@@ -81,12 +82,7 @@ int Run(int argc, char** argv) {
         std::fprintf(stderr, "%s\n", error.c_str()); return 1;
     }
     fut::render::nixbox::NiXBoxRenderer renderer(device);
-    std::error_code saveError;
-    if (!std::filesystem::create_directory(argv[5], saveError)) {
-        std::fprintf(stderr, "preview requires a new scratch-save directory: %s\n",
-                     saveError ? saveError.message().c_str() : "path already exists");
-        return 1;
-    }
+    PreviewSaves saveSession(argv[5], std::string(argv[4]) == "--resume-saves");
     fut::game::app::HostSaveStorage saves(argv[5]);
     saves.readDisc = [&](const std::string& name, std::vector<fut::u8>& out) { return vfs.ReadFile(name, out); };
     auto gamepad = std::unique_ptr<SDL_Gamepad, decltype(&SDL_CloseGamepad)>(nullptr, SDL_CloseGamepad);
