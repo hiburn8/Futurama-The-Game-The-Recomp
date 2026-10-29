@@ -274,18 +274,20 @@ bool MemorySaveStorage::SignatureEnd(u32 h, std::array<u8, 20>& digest) {
 // ---- the host directory ---------------------------------------------------------------------------------------------
 
 HostSaveStorage::HostSaveStorage(std::filesystem::path root) : root_(std::move(root)) {
-    std::error_code ec;
-    std::filesystem::create_directories(root_, ec);
+    // Do not turn an inaccessible save store into an apparently empty card.
+    std::filesystem::create_directories(root_);
     std::vector<std::filesystem::path> dirs;
-    for (const auto& e : std::filesystem::directory_iterator(root_, ec))
+    for (const auto& e : std::filesystem::directory_iterator(root_))
         if (e.is_directory()) dirs.push_back(e.path());
     std::sort(dirs.begin(), dirs.end());              // (12 hex digits: the creation order)
     for (const std::filesystem::path& p : dirs) {
         Save s;
         s.dir = p.filename().string();
-        for (const auto& f : std::filesystem::directory_iterator(p, ec)) {
+        for (const auto& f : std::filesystem::directory_iterator(p)) {
             if (!f.is_regular_file()) continue;
-            std::ifstream in(f.path(), std::ios::binary);
+            std::ifstream in;
+            in.exceptions(std::ios::failbit | std::ios::badbit);
+            in.open(f.path(), std::ios::binary);
             std::vector<u8> data((std::istreambuf_iterator<char>(in)), {});
             const std::string name = f.path().filename().string();
             if (name == "name.txt") {

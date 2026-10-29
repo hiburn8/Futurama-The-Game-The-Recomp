@@ -50,6 +50,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <exception>
 #include <memory>
 #include <string>
 #include <vector>
@@ -92,6 +93,7 @@ int main(int argc, char** argv) {
         if (boxes) platform::ErrorBox(text);
         return rc;
     };
+    try {
     std::string source = argc >= 2 ? argv[1] : platform::FindDisc(CheckDisc);   // the disc image / folder
     if (argc < 2 && source.empty()) {                 // (no argument and the dialog cancelled)
         std::fprintf(stderr, "usage: fut_game <iso-or-folder> [--size WxH] [--saves <dir>]");
@@ -190,4 +192,7 @@ int main(int argc, char** argv) {
         }
     }
     return finish(0);
+    } catch (const std::exception& error) {
+        return fail(std::string("native host: ") + error.what(), 1);
+    }
 }

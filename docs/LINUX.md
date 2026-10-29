@@ -66,3 +66,8 @@ for an interactive run. A controller is currently required for game input.
 Before proposing full Linux/PAL support, verify native rendering, controller
 disconnect/reconnect, sound, movies, PAL languages, progress save/load and clean exit.
 Also build the Windows target to check for regressions. These checks are still pending.
+
+Save-store opening now refuses filesystem and file-open errors instead of treating
+an unreadable store as an empty card. `save_storage_read_errors` verifies invalid
+roots and a normal synthetic save/reopen. Write completion, atomic publication and
+crash durability still need separate work before native persistence acceptance.
