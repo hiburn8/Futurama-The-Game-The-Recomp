@@ -85,6 +85,8 @@ struct AppServices {
     u64 qpf = 1000000;                                // QueryPerformanceFrequency
     // The movie player's platform (game/app/MoviePlayer.h); the app passes its MovieService.
     MovieService* movies = nullptr;
+    // Selected before any menu, error or save text is loaded.
+    std::string language = "English";
 };
 
 // orig: the context base (vtable 0x00295420; ctor 0x0002C320(name): +4 a heap copy of the name, appended to the

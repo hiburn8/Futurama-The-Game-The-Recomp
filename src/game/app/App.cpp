@@ -132,6 +132,7 @@ bool App::Init(const char* directLevel) {            // orig: 0x000D2730 + 0x000
     // (no renderer: Init fails in the original; the port's harnesses run without one) the clear colour black: vf6C
     if (services.renderer) services.renderer->SetBackgroundColor(ni::NiColor{0.0f, 0.0f, 0.0f});
     text = std::make_unique<text::TextManager>(services.readFile);
+    text->SetLanguage(services.language);
     // (port) the texture / pixel data sharing are off until 0x000A2730 turns them on (DAT_002F9AA0 / DAT_002F973C are
     // 0 in the image): App::Init's own files (the error overlay's, the memory cards') share nothing. The port's
     // default is on (the harnesses without an App); the lists are empty at this point (a new process).

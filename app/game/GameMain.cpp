@@ -1,9 +1,10 @@
+#include "game/text/LanguageDb.h"
 // fut_game: the port booted like the original (main 0x000D2A40): the App (src/game/app: the Intro, the front end, the
 // Ingame context with the pause menu, the game-over screen) on the user's own disc image / extracted folder, drawn by
 // the decompiled renderer (render/nixbox NiXBoxRenderer on the D3D11 backend of its D3D8 stream), the controller on
 // port 0 (or the keyboard: Window's KeyboardGamepad).
 //
-//   fut_game <iso-or-folder> [--size WxH] [--saves <dir>]
+//   fut_game <iso-or-folder> [--size WxH] [--saves <dir>] [--language NAME]
 //   fut_game                       (no arguments, e.g. double-clicked: platform/win32/Launcher.h finds the disc)
 //
 // The release build is a Windows-subsystem program (no console window when double-clicked; started from a terminal
@@ -96,16 +97,21 @@ int main(int argc, char** argv) {
     try {
     std::string source = argc >= 2 ? argv[1] : platform::FindDisc(CheckDisc);   // the disc image / folder
     if (argc < 2 && source.empty()) {                 // (no argument and the dialog cancelled)
-        std::fprintf(stderr, "usage: fut_game <iso-or-folder> [--size WxH] [--saves <dir>]");
+        std::fprintf(stderr, "usage: fut_game <iso-or-folder> [--size WxH] [--saves <dir>] [--language NAME]");
         std::fputs("\n", stderr);
         return 2;
     }
     u32 width = 1280, height = 960;
     std::filesystem::path saveDir = SaveFolder();     // (--saves <dir>)
+    const char* language = "English";
     for (int i = 2; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--size" && i + 1 < argc) std::sscanf(argv[++i], "%ux%u", &width, &height);
         else if (a == "--saves" && i + 1 < argc) saveDir = argv[++i];
+        else if (a == "--language" && i + 1 < argc) {
+            language = text::TextManager::ParseLanguage(argv[++i]);
+            if (!language) return fail("unsupported language", 2);
+        }
         else {
             return fail(std::string("unknown option (or its value missing): ") + argv[i], 2);
         }
@@ -159,6 +165,7 @@ int main(int argc, char** argv) {
         return vfs.ReadFile(path, out);
     });
     game::app::AppServices sv;
+    sv.language = language;
     sv.readFile = [&](const std::string& path, std::vector<u8>& out) { return vfs.ReadFile(path, out); };
     sv.streamFile = sv.readFile;                      // (the sound-request loader's NiUDSStream job: synchronous, L)
     sv.sound = &sound;

@@ -94,3 +94,7 @@ An Xbox controller just works. No controller? The keyboard does it too:
 | Enter / Esc | Start / Back |
 
 Have fun!
+
+Both native hosts accept `--language German` (also English, French, Italian and Spanish;
+case-insensitive). English remains the default. Selection happens before menus and save
+labels are loaded. Available text and voice assets depend on the supplied disc.

@@ -8,6 +8,7 @@
 #include "game/app/App.h"
 #include "game/app/SaveStorage.h"
 #include "game/text/TextObject.h"
+#include "game/text/LanguageDb.h"
 #include "render/nixbox/NiXBoxRenderer.h"
 #include "render/xd3d/D3D11Device.h"
 #include <algorithm>
@@ -49,15 +50,23 @@ fut::input::GamepadState ReadPad(SDL_Gamepad* gamepad) {
 
 int Run(int argc, char** argv) {
     if (argc < 6 || std::string(argv[2]) != "--shaders" || (std::string(argv[4]) != "--saves" && std::string(argv[4]) != "--resume-saves")) {
-        std::fprintf(stderr, "usage: FuturamaRecomp DATA --shaders DIR (--saves NEW_DIR | --resume-saves PREVIEW_DIR) [--frames N]\n");
+        std::fprintf(stderr, "usage: FuturamaRecomp DATA --shaders DIR (--saves NEW_DIR | --resume-saves PREVIEW_DIR) [--frames N] [--language NAME]\n");
         return 2;
     }
     int frames = 0;
-    if (argc != 6) {
-        if (argc != 8 || std::string(argv[6]) != "--frames") return 2;
-        const std::string value(argv[7]);
-        auto parsed = std::from_chars(value.data(), value.data() + value.size(), frames);
-        if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || frames <= 0) return 2;
+    const char* language = "English";
+    bool languageSpecified = false;
+    for (int i = 6; i < argc; i += 2) {
+        if (i + 1 == argc) { std::fprintf(stderr, "missing option value\n"); return 2; }
+        const std::string option(argv[i]), value(argv[i + 1]);
+        if (option == "--frames" && frames == 0) {
+            auto parsed = std::from_chars(value.data(), value.data() + value.size(), frames);
+            if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || frames <= 0) return 2;
+        } else if (option == "--language" && !languageSpecified) {
+            language = fut::text::TextManager::ParseLanguage(value);
+            if (!language) { std::fprintf(stderr, "unsupported language: %s\n", value.c_str()); return 2; }
+            languageSpecified = true;
+        } else { std::fprintf(stderr, "unknown or repeated option: %s\n", option.c_str()); return 2; }
     }
     std::string error;
     fut::fs::Vfs vfs;
@@ -88,6 +97,7 @@ int Run(int argc, char** argv) {
     auto gamepad = std::unique_ptr<SDL_Gamepad, decltype(&SDL_CloseGamepad)>(nullptr, SDL_CloseGamepad);
     fut::input::GamepadState pad;
     fut::game::app::AppServices services;
+    services.language = language;
     services.readFile = saves.readDisc;
     services.streamFile = services.readFile;
     services.readPad = [&](fut::u32 port) { return port == 0 && gamepad ? &pad : nullptr; };

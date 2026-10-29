@@ -22,6 +22,13 @@ std::string TakeCString(std::span<const u8> d, size_t& at) {
 
 }  // namespace
 
+const char* TextManager::ParseLanguage(const std::string& name) {
+    for (const char* language : {"English", "German", "French", "Italian", "Spanish"}) {
+        if (StrICmp(name.c_str(), language) == 0) return language;
+    }
+    return nullptr;
+}
+
 int StrICmp(const char* a, const char* b) {           // orig: 0x001684D1
     for (;; ++a, ++b) {
         int ca = static_cast<u8>(*a), cb = static_cast<u8>(*b);

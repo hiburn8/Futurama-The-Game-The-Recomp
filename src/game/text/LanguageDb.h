@@ -85,6 +85,8 @@ public:
 
     // orig: 0x000D9A20 - XGetLanguage() mapped to the names the game passes to SetLanguage.
     static const char* LanguageNameForXbox(u32 xboxLanguage);
+    // Host option validation: canonical disc language name, or nullptr if unsupported.
+    static const char* ParseLanguage(const std::string& name);
 
     // orig: 0x000D9C30. db = nullptr searches all databases in load order.
     const LanguageDb::Entry* Find(const std::string& id, const LanguageDb* db) const;
