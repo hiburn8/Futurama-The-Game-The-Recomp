@@ -127,6 +127,7 @@ int Run(int argc, char** argv) {
     services.qpf = SDL_GetPerformanceFrequency();
     fut::text::CreateAppFont(services.readFile);
     fut::game::app::App app(services);
+    app.ntsc = !vfs.IsPal(); // Select PAL movie names and splash assets before Init.
     const auto base = SDL_GetPerformanceCounter();
     app.input.onRumble = [&](const fut::input::Pad& p) {
         if (gamepad && p.Port() == 0) SDL_RumbleGamepad(gamepad.get(), p.motorLeft, p.motorRight, 100);

@@ -181,6 +181,7 @@ int main(int argc, char** argv) {
     sv.qpf = static_cast<u64>(freq.QuadPart);
     text::CreateAppFont(sv.readFile);                 // App::Init's error overlay: font 0 (tex2)
     game::app::App app(sv);
+    app.ntsc = !vfs.IsPal(); // Select PAL movie names and splash assets before Init.
     QueryPerformanceCounter(&now);
     const u64 base = static_cast<u64>(now.QuadPart);
     app.qpc = 0;                                      // (the clock counts from the start: QPC - base)
