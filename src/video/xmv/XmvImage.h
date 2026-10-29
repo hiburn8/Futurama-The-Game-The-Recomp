@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <string>
+#include <stdexcept>
 #include <vector>
 
 namespace xmv {
@@ -20,11 +21,25 @@ public:
     bool Loaded() const { return !bytes_.empty(); }
 
     // Host address of an original VA inside the section (the lifted kernels' K()).
-    const uint8_t* At(uint32_t va) const { return bytes_.data() + (va - kBase); }
-    bool Contains(uint32_t va, uint32_t n = 1) const { return va >= kBase && va - kBase + n <= bytes_.size(); }
+    const uint8_t* At(uint32_t va) const {
+        if (!Contains(va)) throw std::out_of_range("XMV logical table address outside image");
+        return bytes_.data() + (va - kBase);
+    }
+    bool Contains(uint32_t va, uint32_t n = 1) const {
+        return Loaded() && va >= kBase && size_t(va - kBase) < bytes_.size() &&
+               n <= bytes_.size() - (va - kBase);
+    }
+    // Pointers read FROM a descriptor are already physical PAL/NTSC addresses.
+    // They must not pass through the logical NTSC table-address interface again.
+    const uint8_t* AtPhysical(uint32_t va) const {
+        if (!Loaded() || va < physicalBase_ || size_t(va - physicalBase_) >= bytes_.size())
+            throw std::out_of_range("XMV physical table pointer outside image");
+        return bytes_.data() + (va - physicalBase_);
+    }
 
 private:
     std::vector<uint8_t> bytes_;   // + 64 zero bytes of slack (VLC peeks, scan overreads stay inside)
+    uint32_t physicalBase_ = kBase;
 };
 
 } // namespace xmv

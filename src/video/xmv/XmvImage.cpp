@@ -1,4 +1,5 @@
 #include "XmvImage.h"
+#include "core/XbeImage.h"
 
 #include <cstring>
 #include <fstream>
@@ -12,12 +13,15 @@ bool XmvImage::LoadFromXbe(const std::vector<uint8_t>& xbe) {
         return v;
     };
     bytes_.clear();
-    if (xbe.size() < 0x200 || std::memcmp(xbe.data(), "XBEH", 4) != 0) return false;
+    physicalBase_ = kBase;
+    fut::xbe::XbeImage identity;
+    if (!identity.Load(xbe)) return false;
+    physicalBase_ = identity.IsPalEu() ? 0x00264360 : kBase;
     const uint32_t base = u32At(0x104), count = u32At(0x11C), headers = u32At(0x120);
     for (uint32_t i = 0; i < count; ++i) {
         const size_t h = size_t(headers - base) + i * 0x38;
         const uint32_t sva = u32At(h + 4), vsize = u32At(h + 8), raw = u32At(h + 12), rsize = u32At(h + 16);
-        if (sva != kBase || vsize != kSize || rsize > vsize || size_t(raw) + rsize > xbe.size()) continue;
+        if (sva != physicalBase_ || vsize != kSize || rsize > vsize || size_t(raw) + rsize > xbe.size()) continue;
         bytes_.assign(size_t(vsize) + 64, 0);
         std::memcpy(bytes_.data(), &xbe[raw], rsize);
         // Sanity: the first instructions of XMVDecoder_CreateDecoderForPackets (push ebp; mov ebp, esp; sub esp, 0x24).

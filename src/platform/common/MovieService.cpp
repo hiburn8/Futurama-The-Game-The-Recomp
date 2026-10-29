@@ -1,12 +1,16 @@
 // The console's movie services; see MovieService.h.
-#include "platform/win32/MovieService.h"
+#include "platform/common/MovieService.h"
 
 #include "engine/ni/NiRenderer.h"
 #include "game/sound/SoundSystem.h"
 
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#else
+#include <SDL3/SDL.h>
+#endif
 
 #include <algorithm>
 
@@ -54,10 +58,15 @@ private:
 MovieService::MovieService(const fs::Vfs& vfs, sound::SoundBackend* backend, const std::vector<u8>& xbe)
     : vfs_(vfs), backend_(backend) {
     image_.LoadFromXbe(xbe);
+#ifdef _WIN32
     LARGE_INTEGER f, c;
     ::QueryPerformanceFrequency(&f);
     ::QueryPerformanceCounter(&c);
     qpf_ = u64(f.QuadPart), base_ = u64(c.QuadPart);
+#else
+    qpf_ = SDL_GetPerformanceFrequency();
+    base_ = SDL_GetPerformanceCounter();
+#endif
 }
 
 render::xd3d::XD3DDevice* MovieService::Device(ni::NiRenderer* renderer) {
@@ -71,9 +80,13 @@ std::unique_ptr<game::app::MovieFile> MovieService::Open(const std::string& path
 }
 
 uint64_t MovieService::QueryPerformanceCounter() {
+#ifdef _WIN32
     LARGE_INTEGER c;
     ::QueryPerformanceCounter(&c);
     return u64(c.QuadPart);
+#else
+    return SDL_GetPerformanceCounter();
+#endif
 }
 
 void MovieService::GetDisplayFieldStatus(uint32_t& field, uint32_t& vblankCount) {
@@ -96,6 +109,12 @@ void MovieService::DoWork() {
     if (backend_) backend_->DoStreamWork();           // (L: the streams only; the sound layer's voices run on its
 }                                                     //  own DoWork, one a game step)
 
-void MovieService::Sleep(uint32_t ms) { ::Sleep(ms); }
+void MovieService::Sleep(uint32_t ms) {
+#ifdef _WIN32
+    ::Sleep(ms);
+#else
+    SDL_Delay(ms);
+#endif
+}
 
 }  // namespace fut::platform

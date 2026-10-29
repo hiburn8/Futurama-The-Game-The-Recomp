@@ -34,7 +34,7 @@ public:
 
     // `window` may be null (offscreen). The Xbox back buffer (surf1, 640 x 480) is a D3D11 render target of that
     // size; Swap copies it to the window's swap chain (stretched).
-    bool Init(HWND__* window, std::string& error);
+    bool Init(HWND__* window, std::string& error, const std::string& shaderDirectory = {});
     u32 draws() const { return draws_; }
 
     void Clear(u32 count, const D3DRECT* rects, u32 flags, u32 color, f32 z, u32 stencil) override;

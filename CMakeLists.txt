@@ -133,12 +133,61 @@ add_library(fut_core STATIC
 )
 target_include_directories(fut_core PRIVATE src)
 
+# The core-only target is a portability check, not a playable game.
+if(NOT WIN32)
+    target_compile_definitions(fut_core PRIVATE _FILE_OFFSET_BITS=64)
+    option(FUT_NATIVE_PREVIEW "Build the experimental SDL3/DXVK native host" OFF)
+    if(FUT_NATIVE_PREVIEW)
+        set(DXVK_ROOT "" CACHE PATH "Pinned DXVK Native usr prefix")
+        set(SDL3_ROOT "" CACHE PATH "SDL3 include/library prefix")
+        find_path(DXVK_INCLUDE_DIR d3d11_1.h HINTS "${DXVK_ROOT}/include/dxvk" REQUIRED)
+        find_library(DXVK_D3D11_LIBRARY NAMES dxvk_d3d11 HINTS "${DXVK_ROOT}/lib" REQUIRED)
+        find_library(DXVK_DXGI_LIBRARY NAMES dxvk_dxgi HINTS "${DXVK_ROOT}/lib" REQUIRED)
+        find_path(SDL3_INCLUDE_DIR SDL3/SDL.h HINTS "${SDL3_ROOT}/include" REQUIRED)
+        find_library(SDL3_LIBRARY NAMES SDL3 HINTS "${SDL3_ROOT}/lib" REQUIRED)
+        add_executable(fut_native_preview app/linux/Main.cpp src/platform/common/MovieService.cpp
+            src/render/TextureDecode.cpp src/render/xd3d/D3D11Device.cpp)
+        target_include_directories(fut_native_preview PRIVATE src "${DXVK_INCLUDE_DIR}" "${SDL3_INCLUDE_DIR}")
+        target_link_libraries(fut_native_preview PRIVATE fut_core "${DXVK_D3D11_LIBRARY}" "${DXVK_DXGI_LIBRARY}" "${SDL3_LIBRARY}")
+        set_target_properties(fut_native_preview PROPERTIES OUTPUT_NAME FuturamaRecomp)
+    endif()
+    include(CTest)
+    if(BUILD_TESTING)
+        add_executable(fut_pal_audio_test tests/pal_audio.cpp)
+        target_link_libraries(fut_pal_audio_test PRIVATE fut_core)
+        target_include_directories(fut_pal_audio_test PRIVATE src)
+        set(FUT_PAL_DATA "" CACHE PATH "Optional owned PAL disc folder for audio data checks")
+        if(FUT_PAL_DATA)
+            add_test(NAME pal_audio_binding COMMAND fut_pal_audio_test "${FUT_PAL_DATA}")
+        endif()
+        add_executable(fut_pal_image_test tests/pal_image.cpp src/core/XbeImage.cpp)
+        target_include_directories(fut_pal_image_test PRIVATE src)
+        set(FUT_PAL_XBE "" CACHE FILEPATH "Optional owned PAL/EU image for data binding checks")
+        add_executable(fut_pal_movie_test tests/pal_movie.cpp)
+        target_link_libraries(fut_pal_movie_test PRIVATE fut_core)
+        target_include_directories(fut_pal_movie_test PRIVATE src)
+        set(FUT_PAL_MOVIE "" CACHE FILEPATH "Optional owned PAL XMV file for native decode checks")
+        if(FUT_PAL_XBE AND FUT_PAL_MOVIE)
+            add_test(NAME pal_movie_binding COMMAND fut_pal_movie_test "${FUT_PAL_XBE}" "${FUT_PAL_MOVIE}")
+        endif()
+        if(FUT_PAL_XBE)
+            add_test(NAME pal_image_binding COMMAND fut_pal_image_test "${FUT_PAL_XBE}")
+        endif()
+        add_executable(fut_disc_reader_test tests/disc_reader.cpp src/core/fs/Xdvdfs.cpp)
+        target_include_directories(fut_disc_reader_test PRIVATE src)
+        target_compile_definitions(fut_disc_reader_test PRIVATE _FILE_OFFSET_BITS=64)
+        add_test(NAME disc_reader_large_offsets COMMAND fut_disc_reader_test
+                 "${CMAKE_CURRENT_BINARY_DIR}/synthetic-disc.bin")
+    endif()
+    return()
+endif()
+
 add_library(fut_render STATIC
     src/platform/win32/Window.cpp
     src/platform/win32/GamepadInput.cpp
     src/platform/win32/Launcher.cpp
     src/platform/win32/XAudio2SoundBackend.cpp
-    src/platform/win32/MovieService.cpp
+    src/platform/common/MovieService.cpp
     src/render/TextureDecode.cpp
     src/render/xd3d/D3D11Device.cpp
 )

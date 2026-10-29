@@ -24,7 +24,7 @@
 // Drawn: the Intro's splash screens (legal, NI), the front end's loading screen, main menu scene and its options /
 // load / extras panels (the extras menus with the music list's render target), the levels with their loading screens
 // and titles, the pause menu with its options and load panels, the breakdown's scene, the yes / no dialog, the Death
-// screen, the movies (game/app/MoviePlayer.h on platform/win32/MovieService.h: the Intro's fox / vug / uds / intro,
+// screen, the movies (game/app/MoviePlayer.h on platform/common/MovieService.h: the Intro's fox / vug / uds / intro,
 // Attract, the level cutscenes, the extras' clips; YUY2 through the D3D11 backend's YuvEnable stand-in, the ADPCM audio
 // through the backend's streams).
 //
@@ -37,7 +37,7 @@
 #include "game/text/TextObject.h"
 #include "platform/win32/GamepadInput.h"
 #include "platform/win32/Launcher.h"
-#include "platform/win32/MovieService.h"
+#include "platform/common/MovieService.h"
 #include "platform/win32/XAudio2SoundBackend.h"
 #include "platform/win32/Window.h"
 #include "render/nixbox/NiXBoxRenderer.h"

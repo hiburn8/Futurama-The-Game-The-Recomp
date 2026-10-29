@@ -3,8 +3,8 @@
 // tables, render-state defaults) is not embedded in the port: it is read from here at run time.
 //
 // One process-wide image, loaded once at start (fut_game: the disc image's / extracted folder's default.xbe, before
-// anything reads it; fut_tests: FUT_EXTRACTED_DIR's). Only the Futurama (Xbox, NTSC-U) build is accepted: the
-// certificate's title id and region and the header's time stamp are checked.
+// anything reads it). NTSC-U retains its title/region/timestamp gate. PAL/EU requires
+// the exact retail hash and translates only verified logical data tables; see docs/PAL-DATA.md.
 #pragma once
 
 #include "core/Types.h"
@@ -19,11 +19,13 @@ public:
     // Takes default.xbe's file bytes; false (with a reason) if they are not the expected build.
     bool Load(std::vector<u8> bytes, std::string* error = nullptr);
     bool Loaded() const { return !bytes_.empty(); }
+    bool IsPalEu() const { return palEu_; }
     const std::vector<u8>& Bytes() const { return bytes_; }   // the whole file (the sound and movie libraries')
 
-    // Host address of the n bytes at `va`, all inside one section's file data; nullptr otherwise.
+    // Logical NTSC table address: PAL translates verified ranges; unsupported PAL ranges throw.
+    // Returns nullptr when the resolved bytes are outside file-backed section data.
     const u8* At(u32 va, u32 n = 1) const;
-    u8 Byte(u32 va) const;                            // 0 outside the sections' data (and without an image)
+    u8 Byte(u32 va) const;                            // NTSC/unloaded: 0 outside sections; PAL: unsupported logical ranges throw
     u32 Word(u32 va) const;                           // (little-endian, as the Xbox)
     // The NUL-terminated string at `va` (inside one section's data), else "".
     const char* String(u32 va) const;
@@ -34,6 +36,7 @@ private:
     struct Section {
         u32 va, size, raw;                            // (size: the bytes present in the file)
     };
+    bool palEu_ = false;
     std::vector<u8> bytes_;
     std::vector<Section> sections_;
 };

@@ -167,7 +167,7 @@ const uint16_t* Wmv2Decoder::Vlc(uint32_t va) const { return reinterpret_cast<co
 
 Wmv2Decoder::RunLevel Wmv2Decoder::LoadRunLevel(uint32_t setVa, uint32_t index) const {
     const uint8_t* d = image_->At(setVa + 36 * index);
-    auto ptr = [&](int i) { return image_->At(Load32(d + 4 * i)); };
+    auto ptr = [&](int i) { return image_->AtPhysical(Load32(d + 4 * i)); };
     RunLevel rl;
     rl.vlc = reinterpret_cast<const uint16_t*>(ptr(0));
     rl.escape = Load32(d + 4);

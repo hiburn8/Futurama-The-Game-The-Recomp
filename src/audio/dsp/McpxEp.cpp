@@ -1,3 +1,4 @@
+#include "core/XbeImage.h"
 #include "audio/dsp/McpxEp.h"
 
 #include "audio/dsp/Dsp56300.h"
@@ -57,7 +58,13 @@ u64 Mac(u64 acc, s32 x, u32 y) { return (acc + FracProduct(static_cast<u32>(x) &
 }  // namespace
 
 bool McpxEp::LoadFromXbe(const std::vector<u8>& xbe, std::string* error) {
-    loaded_ = ReadCoefficients(xbe, kStereoModuleVa, 6, stereo_, 10) && ReadCoefficients(xbe, kMonoModuleVa, 5, mono_, 5);
+    loaded_ = false;
+    xbe::XbeImage image;
+    if (!image.Load(xbe, error)) return false;
+    // Only these two verified DOLBY module addresses differ on the accepted PAL image.
+    const u32 stereoVa = image.IsPalEu() ? 0x00317538 : kStereoModuleVa;
+    const u32 monoVa = image.IsPalEu() ? 0x00317248 : kMonoModuleVa;
+    loaded_ = ReadCoefficients(xbe, stereoVa, 6, stereo_, 10) && ReadCoefficients(xbe, monoVa, 5, mono_, 5);
     if (!loaded_ && error) *error = "default.xbe: EP PCM modules 5 / 6 not found";
     return loaded_;
 }

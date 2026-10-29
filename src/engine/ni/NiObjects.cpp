@@ -1,6 +1,7 @@
 // LoadBinary implementations decompiled from default.xbe (addresses in NiObjects.h and below).
 // Version checks compare the file version with FUN_00107750("a.b.c.d"); the shipped files are 4.2.1.0 except
 // FutNTSC02/images/english/leaveme.nif (4.1.0.13) and FutNTSC03/sounds/soundlookup.nif (4.0.0.2).
+#include <cstring>
 #include "engine/ni/NiObjects.h"
 
 #include <cmath>

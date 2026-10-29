@@ -11,7 +11,13 @@
 #include <d3d11_1.h>
 #include <d3dcompiler.h>
 #include <dxgi.h>
+#ifdef _WIN32
 #include <wrl/client.h>
+#else
+#include "platform/common/ComPtr.h"
+#include <filesystem>
+#include <fstream>
+#endif
 
 #include <algorithm>
 #include <bit>
@@ -23,7 +29,11 @@
 #include <unordered_map>
 
 namespace fut::render::xd3d {
+#ifdef _WIN32
 using Microsoft::WRL::ComPtr;
+#else
+using fut::platform::ComPtr;
+#endif
 
 namespace {
 
@@ -512,7 +522,7 @@ struct D3D11Device::Impl {
 D3D11Device::D3D11Device() : impl_(std::make_unique<Impl>()) {}
 D3D11Device::~D3D11Device() = default;
 
-bool D3D11Device::Init(HWND__* window, std::string& error) {
+bool D3D11Device::Init(HWND__* window, std::string& error, const std::string& shaderDirectory) {
     Impl& d = *impl_;
     const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0};
     HRESULT hr;
@@ -539,6 +549,8 @@ bool D3D11Device::Init(HWND__* window, std::string& error) {
         return false;
     }
     d.ctx.As(&d.ctx1);
+#ifdef _WIN32
+    (void)shaderDirectory;
     auto compile = [&](const char* entry, const char* target, ComPtr<ID3DBlob>& blob) {
         ComPtr<ID3DBlob> errors;
         if (SUCCEEDED(D3DCompile(kShader, sizeof kShader - 1, "fixedfunction.hlsl", nullptr, nullptr, entry, target,
@@ -549,13 +561,45 @@ bool D3D11Device::Init(HWND__* window, std::string& error) {
         return false;
     };
     ComPtr<ID3DBlob> vsb, psb, cvb, cpb;
+#else
+    struct Shader {
+        std::vector<char> bytes;
+        const void* GetBufferPointer() const { return bytes.data(); }
+        size_t GetBufferSize() const { return bytes.size(); }
+        const Shader* operator->() const { return this; }
+    };
+    auto compile = [&](const char* entry, const char*, Shader& blob) {
+        const auto path = std::filesystem::path(shaderDirectory) / (std::string(entry) + ".dxbc");
+        if (shaderDirectory.empty()) { error = "native renderer: shader directory required"; return false; }
+        std::ifstream file(path, std::ios::binary | std::ios::ate);
+        const auto size = file ? file.tellg() : std::streampos(-1);
+        if (size < 32 || size > 4 * 1024 * 1024) {
+            error = "native renderer: missing or invalid shader " + path.string(); return false;
+        }
+        blob.bytes.resize(static_cast<size_t>(size));
+        file.seekg(0);
+        if (!file.read(blob.bytes.data(), static_cast<std::streamsize>(blob.bytes.size())) ||
+            std::memcmp(blob.bytes.data(), "DXBC", 4) != 0) {
+            error = "native renderer: invalid DXBC shader " + path.string(); return false;
+        }
+        return true;
+    };
+    Shader vsb, psb, cvb, cpb;
+#endif
     if (!compile("VSMain", "vs_4_0", vsb) || !compile("PSMain", "ps_4_0", psb) || !compile("ClearVS", "vs_4_0", cvb) ||
         !compile("ClearPS", "ps_4_0", cpb))
         return false;
-    d.device->CreateVertexShader(vsb->GetBufferPointer(), vsb->GetBufferSize(), nullptr, &d.vs);
-    d.device->CreatePixelShader(psb->GetBufferPointer(), psb->GetBufferSize(), nullptr, &d.ps);
-    d.device->CreateVertexShader(cvb->GetBufferPointer(), cvb->GetBufferSize(), nullptr, &d.clearVs);
-    d.device->CreatePixelShader(cpb->GetBufferPointer(), cpb->GetBufferSize(), nullptr, &d.clearPs);
+    auto check = [&](HRESULT result, const char* operation) {
+        if (SUCCEEDED(result)) return true;
+        char code[32];
+        std::snprintf(code, sizeof code, " (0x%08lX)", static_cast<unsigned long>(result));
+        error = std::string(operation) + code;
+        return false;
+    };
+    if (!check(d.device->CreateVertexShader(vsb->GetBufferPointer(), vsb->GetBufferSize(), nullptr, &d.vs), "vertex shader creation failed")) return false;
+    if (!check(d.device->CreatePixelShader(psb->GetBufferPointer(), psb->GetBufferSize(), nullptr, &d.ps), "pixel shader creation failed")) return false;
+    if (!check(d.device->CreateVertexShader(cvb->GetBufferPointer(), cvb->GetBufferSize(), nullptr, &d.clearVs), "clear vertex shader creation failed")) return false;
+    if (!check(d.device->CreatePixelShader(cpb->GetBufferPointer(), cpb->GetBufferSize(), nullptr, &d.clearPs), "clear pixel shader creation failed")) return false;
     const D3D11_INPUT_ELEMENT_DESC il[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(CVertex, pos), D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(CVertex, nrm), D3D11_INPUT_PER_VERTEX_DATA, 0},
@@ -566,15 +610,15 @@ bool D3D11Device::Init(HWND__* window, std::string& error) {
         {"TEXCOORD", 2, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(CVertex, uv[2]), D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"TEXCOORD", 3, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(CVertex, uv[3]), D3D11_INPUT_PER_VERTEX_DATA, 0},
     };
-    d.device->CreateInputLayout(il, 8, vsb->GetBufferPointer(), vsb->GetBufferSize(), &d.layout);
+    if (!check(d.device->CreateInputLayout(il, 8, vsb->GetBufferPointer(), vsb->GetBufferSize(), &d.layout), "input layout creation failed")) return false;
     D3D11_BUFFER_DESC bd = {};
     bd.Usage = D3D11_USAGE_DYNAMIC;
     bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
     bd.ByteWidth = (sizeof(DrawCB) + 15) & ~15u;
-    d.device->CreateBuffer(&bd, nullptr, &d.drawCB);
+    if (!check(d.device->CreateBuffer(&bd, nullptr, &d.drawCB), "draw buffer creation failed")) return false;
     bd.ByteWidth = (sizeof(ClearCB) + 15) & ~15u;
-    d.device->CreateBuffer(&bd, nullptr, &d.clearCB);
+    if (!check(d.device->CreateBuffer(&bd, nullptr, &d.clearCB), "clear buffer creation failed")) return false;
     {                                                 // a white 1x1 texture (an unloadable source)
         const u32 px = 0xFFFFFFFFu;
         D3D11_TEXTURE2D_DESC td = {};
@@ -582,8 +626,8 @@ bool D3D11Device::Init(HWND__* window, std::string& error) {
         td.SampleDesc.Count = 1, td.Usage = D3D11_USAGE_IMMUTABLE, td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
         D3D11_SUBRESOURCE_DATA init{&px, 4, 4};
         ComPtr<ID3D11Texture2D> t;
-        d.device->CreateTexture2D(&td, &init, &t);
-        d.device->CreateShaderResourceView(t.Get(), nullptr, &d.white);
+        if (!check(d.device->CreateTexture2D(&td, &init, &t), "default texture creation failed")) return false;
+        if (!check(d.device->CreateShaderResourceView(t.Get(), nullptr, &d.white), "default texture view creation failed")) return false;
     }
     return d.ColorTarget(backBuffer()) && d.DepthTarget(depthBuffer());
 }
@@ -798,7 +842,7 @@ void D3D11Device::Swap(u32 flags) {
     if (!bb) return;
     if (d.swapChain) {
         ComPtr<ID3D11Texture2D> back;
-        if (SUCCEEDED(d.swapChain->GetBuffer(0, IID_PPV_ARGS(&back)))) d.ctx->CopyResource(back.Get(), bb->tex.Get());
+        if (SUCCEEDED(d.swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(back.GetAddressOf())))) d.ctx->CopyResource(back.Get(), bb->tex.Get());
         d.swapChain->Present(1, 0);
     }
 }

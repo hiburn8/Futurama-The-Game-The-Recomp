@@ -1,3 +1,4 @@
+#include "core/XbeImage.h"
 #include "audio/dsp/DsImage.h"
 
 #include <cstring>
@@ -22,19 +23,12 @@ bool Fail(std::string* error, const char* why) {
 
 // Bytes [va, va + n) of an XBE section (the file's section headers), or false.
 bool ReadXbe(const std::vector<u8>& xbe, u32 va, u32 n, std::vector<u8>& out) {
-    if (xbe.size() < 0x200 || std::memcmp(xbe.data(), "XBEH", 4) != 0) return false;
-    const u32 base = U32At(xbe, 0x104), count = U32At(xbe, 0x11C), headers = U32At(xbe, 0x120);
-    for (u32 i = 0; i < count; ++i) {
-        const size_t h = size_t(headers - base) + size_t(i) * 0x38;
-        const u32 sva = U32At(xbe, h + 4), vsize = U32At(xbe, h + 8), raw = U32At(xbe, h + 12),
-                  rsize = U32At(xbe, h + 16);
-        if (va >= sva && size_t(va) + n <= size_t(sva) + vsize && size_t(va - sva) + n <= rsize &&
-            size_t(raw) + rsize <= xbe.size()) {
-            out.assign(xbe.begin() + raw + (va - sva), xbe.begin() + raw + (va - sva) + n);
-            return true;
-        }
-    }
-    return false;
+    xbe::XbeImage image;
+    if (!image.Load(xbe)) return false;
+    const u8* data = image.At(va, n);
+    if (!data) return false;
+    out.assign(data, data + n);
+    return true;
 }
 
 }  // namespace

@@ -1,3 +1,4 @@
+#include "core/XbeImage.h"
 // XDK DirectSound math; see XdsMath.h. Addresses are default.xbe's; "test ah, M; jcc" comments give the x87
 // compare the branch implements (C3 C2 C0 of FCOM / FCOMP).
 #include "audio/xdsound/XdsMath.h"
@@ -298,23 +299,14 @@ s32 PowerToLevel(f32 g) {                        // orig: 0x002497A3
 }
 
 bool Tables::LoadFromXbe(const std::vector<u8>& xbe) {
-    auto u32At = [&](size_t o) -> u32 {
-        u32 v = 0;
-        if (o + 4 <= xbe.size()) std::memcpy(&v, &xbe[o], 4);
-        return v;
-    };
-    if (xbe.size() < 0x200 || std::memcmp(xbe.data(), "XBEH", 4) != 0) return false;
-    const u32 base = u32At(0x104), count = u32At(0x11C), headers = u32At(0x120);
-    auto read = [&](u32 va, size_t n, std::vector<u8>& out) {
-        for (u32 i = 0; i < count; ++i) {
-            const size_t h = size_t(headers - base) + i * 0x38;
-            const u32 sva = u32At(h + 4), vsize = u32At(h + 8), raw = u32At(h + 12), rsize = u32At(h + 16);
-            if (va >= sva && va + n <= size_t(sva) + vsize && va - sva + n <= rsize && raw + rsize <= xbe.size()) {
-                out.assign(xbe.begin() + raw + (va - sva), xbe.begin() + raw + (va - sva) + n);
-                return true;
-            }
-        }
-        return false;
+    *this = Tables{};
+    xbe::XbeImage image;
+    if (!image.Load(xbe)) return false;
+    auto read = [&](u32 va, u32 n, std::vector<u8>& out) {
+        const u8* data = image.At(va, n);
+        if (!data) return false;
+        out.assign(data, data + n);
+        return true;
     };
     std::vector<u8> index, gain, cut, rows, signs, delays;
     if (!read(0x00262960, 61 * 31 * 2, index) || !read(kHrtfFilterBase, kHrtfFilterCount * 32, hrtfFilters) ||

@@ -4,7 +4,7 @@
 // docs/analysis/movies_port.md 2.
 //
 // The console-not-emulator split: the player is game code and always the same; what it runs on is a MovieService.
-// The app's service (platform/win32/MovieService.h) gives the device of the renderer, the disc's files, the clock /
+// The app's service (platform/common/MovieService.h) gives the device of the renderer, the disc's files, the clock /
 // display fields and the DirectSound streams of the sound backend.
 #pragma once
 
