@@ -13,6 +13,7 @@
 #include <charconv>
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -64,10 +65,14 @@ int Run(int argc, char** argv) {
     if (!vfs.ReadFile("default.xbe", xbe) || !fut::xbe::LoadGameImage(std::move(xbe), &error)) {
         std::fprintf(stderr, "disc validation failed: %s\n", error.c_str()); return 1;
     }
+    // DXVK reads libc environment, not SDL's separate environment snapshot.
+    if (::setenv("DXVK_WSI_DRIVER", "SDL3", 1) != 0) {
+        std::perror("DXVK_WSI_DRIVER");
+        return 1;
+    }
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1;
     }
-    SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "DXVK_WSI_DRIVER", "SDL3", true);
     auto window = std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)>(
         SDL_CreateWindow("Futurama native preview", 1280, 960, SDL_WINDOW_VULKAN), SDL_DestroyWindow);
     if (!window) { std::fprintf(stderr, "window: %s\n", SDL_GetError()); return 1; }
