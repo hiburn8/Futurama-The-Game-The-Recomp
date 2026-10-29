@@ -1,5 +1,5 @@
-// XAudio2 sound backend; see XAudio2SoundBackend.h.
-#include "platform/win32/XAudio2SoundBackend.h"
+// Shared Xbox VP/GP/EP sound backend, with XAudio2 or SDL output; see GameSoundBackend.h.
+#include "platform/common/GameSoundBackend.h"
 
 #include "audio/Wav.h"
 #include "audio/dsp/AudioDsp.h"
@@ -7,11 +7,17 @@
 #include "audio/vp/VpBridge.h"
 #include "audio/vp/VpStream.h"
 
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
 #include <xaudio2.h>
 #include <xaudio2fx.h>
+#else
+#include <SDL3/SDL.h>
+#endif
+#include <chrono>
+#include <stdexcept>
 
 #include <algorithm>
 #include <array>
@@ -44,15 +50,26 @@ constexpr u32 kBuffersQueued = 3;
 
 class XAudio2Stream;
 
-struct XAudio2SoundBackend::Impl : public IXAudio2VoiceCallback {
+struct GameSoundBackend::Impl
+#ifdef _WIN32
+    : public IXAudio2VoiceCallback
+#endif
+{
     Options opt;
     Mode mode = Mode::Vp;
+#ifdef _WIN32
     IXAudio2* xaudio = nullptr;
     IXAudio2MasteringVoice* master = nullptr;
     u32 masterChannels = 2, channelMask = 0x3;       // SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT
     u32 deviceRate = 48000;
     bool comInit = false;
+#endif
     bool offline = false;
+#ifndef _WIN32
+    SDL_AudioStream* output = nullptr;
+    bool audioInit = false;
+    std::atomic<bool> outputFailed{false};
+#endif
     xds::Tables tables;
     xds::DirectSound ds{&tables};
     std::vector<u8> xbe, dsstdfx;
@@ -67,9 +84,11 @@ struct XAudio2SoundBackend::Impl : public IXAudio2VoiceCallback {
         bool is3D = false;
         std::vector<u8> raw;                         // Vp: the SetBufferData bytes (ADPCM undecoded; the VP decodes)
         std::vector<s16> pcm;                        // LegacyVoices: decoded
+#ifdef _WIN32
         IXAudio2SourceVoice* voice = nullptr;
         f32 maxRatio = 1;
         bool started = false, looping = false;
+#endif
         // Options::stepStatus (the deterministic status): the game thread's cursor of the voice.
         bool stepPlaying = false, stepLoop = false;
         double stepCursor = 0, stepLength = 0;
@@ -81,8 +100,10 @@ struct XAudio2SoundBackend::Impl : public IXAudio2VoiceCallback {
         std::unique_ptr<vp::McpxStream> mcpx;
     };
     std::unordered_map<Buffer, Voice> voices;
+#ifdef _WIN32
     std::vector<XAudio2Stream*> streams;             // the movie streams (game thread)
 
+#endif
     // ---- Mode::Vp. The game thread owns ds, the bridge and gameFifo; `lock` guards the rest that both threads
     // touch: the memory map (Map / Unmap at Play / Stop), the published FIFO and reverb words, the front end / VP /
     // DSP (the audio thread's drain + render; GetStatus reads the VP).
@@ -100,18 +121,23 @@ struct XAudio2SoundBackend::Impl : public IXAudio2VoiceCallback {
     bool dspFailed = false;
     vp::Levels* levels = nullptr;                    // SetLevels
     u32 outChannels = 2;
+#ifdef _WIN32
     IXAudio2SourceVoice* out = nullptr;
+#endif
     std::vector<std::vector<f32>> ring;              // the XAudio2 buffers' memory (kBuffersQueued + 1)
     u32 ringNext = 0;
     std::vector<s32> chunk;
     std::thread thread;
     std::atomic<bool> running{false};
+#ifdef _WIN32
     HANDLE wake = nullptr;
 
     // ---- LegacyVoices
     IXAudio2SubmixVoice* reverb = nullptr;           // I3DL2 bin 10 (stand-in for dsstdfx.bin effect 0)
+#endif
     bool effectsImage = false;                       // DownloadEffectsImage done: the I3DL2 bin is processed
 
+#ifdef _WIN32
     // IXAudio2VoiceCallback (XAudio2's thread): a buffer finished, the audio thread renders the next.
     void STDMETHODCALLTYPE OnBufferEnd(void*) noexcept override {
         if (wake) SetEvent(wake);
@@ -123,6 +149,7 @@ struct XAudio2SoundBackend::Impl : public IXAudio2VoiceCallback {
     void STDMETHODCALLTYPE OnLoopEnd(void*) noexcept override {}
     void STDMETHODCALLTYPE OnVoiceError(void*, HRESULT) noexcept override {}
 
+#endif
     // ---- Mode::Vp -------------------------------------------------------------------------------------------------
     // Starts the hardware path: the DSP from the game's files, the library's VP set-up (published at once).
     bool StartVp() {
@@ -131,7 +158,7 @@ struct XAudio2SoundBackend::Impl : public IXAudio2VoiceCallback {
         else if (!tables.Loaded()) why = "default.xbe: no HRTF tables";
         else if (!dsp.Init(dsstdfx, xbe, &why)) why = "AudioDsp: " + why;
         if (!why.empty()) {
-            std::fprintf(stderr, "audio: hardware path unavailable (%s); using the per-voice XAudio2 stand-ins\n",
+            std::fprintf(stderr, "audio: hardware path unavailable (%s); output initialization failed\n",
                          why.c_str());
             return false;
         }
@@ -187,6 +214,7 @@ struct XAudio2SoundBackend::Impl : public IXAudio2VoiceCallback {
         }
     }
 
+#ifdef _WIN32
     void AudioThread() {
         while (running) {
             XAUDIO2_VOICE_STATE st;
@@ -229,6 +257,41 @@ struct XAudio2SoundBackend::Impl : public IXAudio2VoiceCallback {
         return true;
     }
 
+#else
+    void OutputError() {
+        std::fprintf(stderr, "audio: SDL output failed: %s\n", SDL_GetError());
+        outputFailed = true;
+        running = false;
+    }
+    void AudioThread() {
+        const int bufferBytes = int(kFramesPerBuffer * kFrame * outChannels * sizeof(f32));
+        std::vector<f32> buffer(kFramesPerBuffer * kFrame * outChannels);
+        while (running) {
+            const int queued = SDL_GetAudioStreamQueued(output);
+            if (queued < 0) { OutputError(); break; }
+            if (queued < int(kBuffersQueued) * bufferBytes) {
+                RenderBuffer(buffer.data());
+                if (!SDL_PutAudioStreamData(output, buffer.data(), bufferBytes)) { OutputError(); break; }
+            } else {
+                SDL_Delay(2);
+            }
+        }
+    }
+    bool StartOutput() {
+        outChannels = opt.surround ? 6 : 2;
+        const SDL_AudioSpec spec{SDL_AUDIO_F32, int(outChannels), 48000};
+        output = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
+        if (!output || !SDL_ResumeAudioStreamDevice(output)) {
+            std::fprintf(stderr, "audio: SDL device start failed: %s\n", SDL_GetError());
+            return false;
+        }
+        running = true;
+        thread = std::thread([this] { AudioThread(); });
+        return true;
+    }
+#endif
+
+#ifdef _WIN32
     // ---- LegacyVoices ---------------------------------------------------------------------------------------------
     void Destroy(Voice& v) {
         if (v.voice) v.voice->DestroyVoice();
@@ -308,6 +371,13 @@ struct XAudio2SoundBackend::Impl : public IXAudio2VoiceCallback {
         }
     }
 
+#else
+    void Destroy(Voice&) {}
+    void Apply(Buffer, Voice&) {}
+    void SetReverbParameters() {}
+    void StartLegacy() { throw std::runtime_error("XAudio2 legacy voices are Windows-only"); }
+#endif
+
     // ---- both modes: after a DirectSound setter of buffer b
     void Changed(Buffer b) {
         auto it = voices.find(b);
@@ -320,7 +390,7 @@ struct XAudio2SoundBackend::Impl : public IXAudio2VoiceCallback {
     }
 };
 
-void XAudio2SoundBackend::BinGains(const xds::VoiceRegisters& r, u32 channels, u32 channel, f32 gains[32]) {
+void GameSoundBackend::BinGains(const xds::VoiceRegisters& r, u32 channels, u32 channel, f32 gains[32]) {
     std::fill(gains, gains + 32, 0.0f);
     const bool stereo = channels == 2 && r.hwVoices == 1;
     const u32 k = stereo ? 0 : std::min(channel, r.hwVoices - 1);
@@ -332,35 +402,45 @@ void XAudio2SoundBackend::BinGains(const xds::VoiceRegisters& r, u32 channels, u
     }
 }
 
-XAudio2SoundBackend::XAudio2SoundBackend() : XAudio2SoundBackend(Options{}) {}
+GameSoundBackend::GameSoundBackend() : GameSoundBackend(Options{}) {}
 
-XAudio2SoundBackend::XAudio2SoundBackend(const Options& options) : impl_(std::make_unique<Impl>()) {
+GameSoundBackend::GameSoundBackend(const Options& options) : impl_(std::make_unique<Impl>()) {
     impl_->opt = options;
     impl_->mode = options.mode;
     impl_->vpModel.SetNotifiers(&impl_->notifiers);
 }
 
-XAudio2SoundBackend::~XAudio2SoundBackend() {
+GameSoundBackend::~GameSoundBackend() {
     Impl& d = *impl_;
     if (d.thread.joinable()) {
         d.running = false;
+#ifdef _WIN32
         SetEvent(d.wake);
+#endif
         d.thread.join();
     }
+#ifdef _WIN32
     if (d.out) d.out->DestroyVoice();                // (stops the callbacks before the event goes)
     if (d.wake) CloseHandle(d.wake);
+#endif
     for (auto& [b, v] : d.voices) {
         v.mcpx.reset();
         d.Destroy(v);
     }
+#ifdef _WIN32
     if (d.reverb) d.reverb->DestroyVoice();
     if (d.master) d.master->DestroyVoice();
     if (d.xaudio) d.xaudio->Release();
     if (d.comInit) CoUninitialize();
+#else
+    if (d.output) SDL_DestroyAudioStream(d.output);
+    if (d.audioInit) SDL_QuitSubSystem(SDL_INIT_AUDIO);
+#endif
 }
 
-bool XAudio2SoundBackend::Init() {
+bool GameSoundBackend::Init() {
     Impl& d = *impl_;
+#ifdef _WIN32
     d.comInit = SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
     if (FAILED(XAudio2Create(&d.xaudio, 0, XAUDIO2_DEFAULT_PROCESSOR))) return false;
     if (FAILED(d.xaudio->CreateMasteringVoice(&d.master))) return false;
@@ -372,30 +452,36 @@ bool XAudio2SoundBackend::Init() {
     if (SUCCEEDED(d.master->GetChannelMask(&mask)) && mask) d.channelMask = mask;
     if (d.mode == Mode::LegacyVoices) d.StartLegacy();
     return true;
+#else
+    if (d.mode != Mode::Vp) return false;
+    d.audioInit = SDL_InitSubSystem(SDL_INIT_AUDIO);
+    if (!d.audioInit) std::fprintf(stderr, "audio: SDL initialization failed: %s\n", SDL_GetError());
+    return d.audioInit;
+#endif
 }
 
-bool XAudio2SoundBackend::InitOffline() {
+bool GameSoundBackend::InitOffline() {
     impl_->offline = true;
     impl_->mode = Mode::Vp;
     impl_->outChannels = impl_->opt.surround ? 6 : 2;
     return true;
 }
 
-void XAudio2SoundBackend::LoadXbeTables(const std::vector<u8>& xbe) {
+void GameSoundBackend::LoadXbeTables(const std::vector<u8>& xbe) {
     impl_->tables.LoadFromXbe(xbe);
     impl_->xbe = xbe;
 }
 
-void XAudio2SoundBackend::SetEffectsImage(const std::vector<u8>& dsstdfx) {
+void GameSoundBackend::SetEffectsImage(const std::vector<u8>& dsstdfx) {
     u32 words[70];
     if (xds::ReadReverbState(dsstdfx, words)) impl_->ds.SetReverbState(words);
     impl_->dsstdfx = dsstdfx;
 }
 
-const xds::DirectSound& XAudio2SoundBackend::Model() const { return impl_->ds; }
-XAudio2SoundBackend::Mode XAudio2SoundBackend::CurrentMode() const { return impl_->mode; }
+const xds::DirectSound& GameSoundBackend::Model() const { return impl_->ds; }
+GameSoundBackend::Mode GameSoundBackend::CurrentMode() const { return impl_->mode; }
 
-bool XAudio2SoundBackend::RenderFrames(u32 frames, std::vector<s32>& out) {
+bool GameSoundBackend::RenderFrames(u32 frames, std::vector<s32>& out) {
     Impl& d = *impl_;
     if (!d.offline || d.mode != Mode::Vp) return false;
     const size_t at = out.size();
@@ -404,16 +490,24 @@ bool XAudio2SoundBackend::RenderFrames(u32 frames, std::vector<s32>& out) {
     return d.RenderLocked(frames, out.data() + at);
 }
 
-bool XAudio2SoundBackend::HardwarePlaying(Buffer b) {
+bool GameSoundBackend::HardwarePlaying(Buffer b) {
     Impl& d = *impl_;
     if (d.mode != Mode::Vp) return false;
     std::lock_guard g(d.lock);
     return d.bridge.Playing(b) && !d.bridge.Ended(b, d.vpModel);
 }
 
-u32 XAudio2SoundBackend::OutputChannels() const { return impl_->outChannels; }
+u32 GameSoundBackend::OutputChannels() const { return impl_->outChannels; }
 
-void XAudio2SoundBackend::SetLevels(audio::vp::Levels* levels) {
+bool GameSoundBackend::Healthy() const {
+    std::lock_guard g(impl_->lock);
+#ifndef _WIN32
+    if (impl_->outputFailed) return false;
+#endif
+    return !impl_->dspFailed;
+}
+
+void GameSoundBackend::SetLevels(audio::vp::Levels* levels) {
     Impl& d = *impl_;
     std::lock_guard g(d.lock);
     d.levels = levels;
@@ -421,33 +515,37 @@ void XAudio2SoundBackend::SetLevels(audio::vp::Levels* levels) {
 }
 
 // The game calls it once, first (the sound system's ctor 0x000CCD90): the hardware path starts here.
-void XAudio2SoundBackend::DownloadEffectsImage() {
+void GameSoundBackend::DownloadEffectsImage() {
     Impl& d = *impl_;
     d.effectsImage = true;
     if (d.mode != Mode::Vp) return;
     if (!d.StartVp() || (!d.offline && !d.StartOutput())) {
+#ifdef _WIN32
         if (d.offline) return;                       // (RenderFrames then renders nothing useful; tests check)
+#else
+        throw std::runtime_error("native audio DSP/output initialization failed");
+#endif
         d.StartLegacy();
     }
 }
 
-void XAudio2SoundBackend::SetDopplerFactor(f32 f, u32 apply) { impl_->ds.SetDopplerFactor(f, apply); }
-void XAudio2SoundBackend::SetDistanceFactor(f32 f, u32 apply) { impl_->ds.SetDistanceFactor(f, apply); }
-void XAudio2SoundBackend::SetRolloffFactor(f32 f, u32 apply) { impl_->ds.SetRolloffFactor(f, apply); }
+void GameSoundBackend::SetDopplerFactor(f32 f, u32 apply) { impl_->ds.SetDopplerFactor(f, apply); }
+void GameSoundBackend::SetDistanceFactor(f32 f, u32 apply) { impl_->ds.SetDistanceFactor(f, apply); }
+void GameSoundBackend::SetRolloffFactor(f32 f, u32 apply) { impl_->ds.SetRolloffFactor(f, apply); }
 
-void XAudio2SoundBackend::SetI3DL2Listener(u32 preset, u32 apply) {
+void GameSoundBackend::SetI3DL2Listener(u32 preset, u32 apply) {
     impl_->ds.SetI3DL2Listener(sound::I3DL2Preset(preset), apply);
     if (impl_->mode == Mode::LegacyVoices) impl_->SetReverbParameters();
 }
 
-void XAudio2SoundBackend::ListenerPosition(f32 x, f32 y, f32 z, u32 apply) { impl_->ds.SetPosition(x, y, z, apply); }
-void XAudio2SoundBackend::ListenerVelocity(f32 x, f32 y, f32 z, u32 apply) { impl_->ds.SetVelocity(x, y, z, apply); }
+void GameSoundBackend::ListenerPosition(f32 x, f32 y, f32 z, u32 apply) { impl_->ds.SetPosition(x, y, z, apply); }
+void GameSoundBackend::ListenerVelocity(f32 x, f32 y, f32 z, u32 apply) { impl_->ds.SetVelocity(x, y, z, apply); }
 
-void XAudio2SoundBackend::ListenerOrientation(f32 fx, f32 fy, f32 fz, f32 tx, f32 ty, f32 tz, u32 apply) {
+void GameSoundBackend::ListenerOrientation(f32 fx, f32 fy, f32 fz, f32 tx, f32 ty, f32 tz, u32 apply) {
     impl_->ds.SetOrientation(fx, fy, fz, tx, ty, tz, apply);
 }
 
-void XAudio2SoundBackend::CommitDeferredSettings() {
+void GameSoundBackend::CommitDeferredSettings() {
     Impl& d = *impl_;
     d.ds.CommitDeferredSettings();
     for (auto& [b, v] : d.voices)
@@ -456,7 +554,7 @@ void XAudio2SoundBackend::CommitDeferredSettings() {
 
 // orig: DirectSoundDoWork, called by the game once per frame after CommitDeferredSettings: the frame's register
 // writes and a new reverb parameter set (the listener commit's conversion) go to the audio thread together.
-void XAudio2SoundBackend::DoWork() {
+void GameSoundBackend::DoWork() {
     Impl& d = *impl_;
     if (d.mode != Mode::Vp) return;
     {
@@ -488,7 +586,7 @@ void XAudio2SoundBackend::DoWork() {
     }
 }
 
-XAudio2SoundBackend::Buffer XAudio2SoundBackend::CreateBuffer(u32 flags, const std::vector<u8>& format) {
+GameSoundBackend::Buffer GameSoundBackend::CreateBuffer(u32 flags, const std::vector<u8>& format) {
     Impl::Voice v;
     v.flags = flags;
     v.is3D = (flags & 0x10) != 0;
@@ -504,7 +602,7 @@ XAudio2SoundBackend::Buffer XAudio2SoundBackend::CreateBuffer(u32 flags, const s
     return b;
 }
 
-void XAudio2SoundBackend::SetBufferData(Buffer b, const u8* data, u32 bytes) {
+void GameSoundBackend::SetBufferData(Buffer b, const u8* data, u32 bytes) {
     Impl& d = *impl_;
     auto it = d.voices.find(b);
     if (it == d.voices.end()) return;
@@ -525,6 +623,7 @@ void XAudio2SoundBackend::SetBufferData(Buffer b, const u8* data, u32 bytes) {
                                         : double(bytes) / double(ch * (v.bits ? v.bits / 8u : 1u));
         return;
     }
+#ifdef _WIN32
     d.Destroy(v);
     v.pcm.clear();
     if (!data || !d.xaudio || v.channels == 0 || v.channels > 2 || v.rate == 0) return;
@@ -543,9 +642,12 @@ void XAudio2SoundBackend::SetBufferData(Buffer b, const u8* data, u32 bytes) {
     XAUDIO2_VOICE_SENDS list = {d.reverb ? 2u : 1u, sends};
     if (FAILED(d.xaudio->CreateSourceVoice(&v.voice, &wf, 0, v.maxRatio, nullptr, &list))) v.voice = nullptr;
     d.Apply(b, v);
+#else
+
+#endif
 }
 
-void XAudio2SoundBackend::Play(Buffer b, u32 flags) {
+void GameSoundBackend::Play(Buffer b, u32 flags) {
     Impl& d = *impl_;
     auto it = d.voices.find(b);
     if (it == d.voices.end()) return;
@@ -581,6 +683,7 @@ void XAudio2SoundBackend::Play(Buffer b, u32 flags) {
             d.bridge.SetPosition(b, resume / v.blockAlign * (v.format == 0x69 ? 64u : 1u));
         return;
     }
+#ifdef _WIN32
     if (!v.voice) return;
     XAUDIO2_VOICE_STATE st;
     v.voice->GetState(&st, XAUDIO2_VOICE_NOSAMPLESPLAYED);
@@ -596,9 +699,12 @@ void XAudio2SoundBackend::Play(Buffer b, u32 flags) {
     d.Apply(b, v);
     v.voice->Start(0);
     v.started = true;
+#else
+
+#endif
 }
 
-void XAudio2SoundBackend::Stop(Buffer b) {
+void GameSoundBackend::Stop(Buffer b) {
     Impl& d = *impl_;
     auto it = d.voices.find(b);
     if (it == d.voices.end()) return;
@@ -623,12 +729,16 @@ void XAudio2SoundBackend::Stop(Buffer b) {
         d.bridge.Stop(b);                            // VOICE_OFF (published at DoWork); the data is unmapped now
         return;
     }
+#ifdef _WIN32
     if (!it->second.voice) return;
     it->second.voice->Stop(0);
     it->second.started = false;
+#else
+
+#endif
 }
 
-XAudio2SoundBackend::Buffer XAudio2SoundBackend::CreateStreamVoice(u32 flags, u32 maxPackets,
+GameSoundBackend::Buffer GameSoundBackend::CreateStreamVoice(u32 flags, u32 maxPackets,
                                                                      const std::vector<u8>& format) {
     Impl& d = *impl_;
     if (d.mode != Mode::Vp) return 0;                // (LegacyVoices: no streams, the music is silent; L)
@@ -648,9 +758,15 @@ XAudio2SoundBackend::Buffer XAudio2SoundBackend::CreateStreamVoice(u32 flags, u3
     // 0x0024D1F1 runs with the APU's lock released (the hardware keeps mixing): the callers hold d.lock, the audio
     // thread gets it between two queries.
     v.mcpx->SetSystemTime([] {
+#ifdef _WIN32
         FILETIME f;
         GetSystemTimePreciseAsFileTime(&f);
         return static_cast<s64>(u64(f.dwHighDateTime) << 32 | f.dwLowDateTime);
+#else
+        const auto elapsed = std::chrono::system_clock::now().time_since_epoch();
+        return std::chrono::duration_cast<std::chrono::duration<s64, std::ratio<1, 10000000>>>(elapsed).count()
+               + 116444736000000000LL;
+#endif
     });
     v.mcpx->SetWaitYield([&d] {
         d.lock.unlock();
@@ -660,7 +776,7 @@ XAudio2SoundBackend::Buffer XAudio2SoundBackend::CreateStreamVoice(u32 flags, u3
     return b;
 }
 
-void XAudio2SoundBackend::ProcessPacket(Buffer b, const u8* data, u32 size, u32* status) {
+void GameSoundBackend::ProcessPacket(Buffer b, const u8* data, u32 size, u32* status) {
     Impl& d = *impl_;
     auto it = d.voices.find(b);
     if (it == d.voices.end() || !it->second.mcpx) return;
@@ -668,7 +784,7 @@ void XAudio2SoundBackend::ProcessPacket(Buffer b, const u8* data, u32 size, u32*
     it->second.mcpx->Process({data, size, nullptr, status});   // IDirectSoundStream_Process(XMEDIAPACKET, NULL)
 }
 
-void XAudio2SoundBackend::PauseStream(Buffer b, bool pause) {
+void GameSoundBackend::PauseStream(Buffer b, bool pause) {
     Impl& d = *impl_;
     auto it = d.voices.find(b);
     if (it == d.voices.end()) return;
@@ -686,12 +802,16 @@ void XAudio2SoundBackend::PauseStream(Buffer b, bool pause) {
         d.bridge.Pause(b, pause);                    // VOICE_PAUSE (published at DoWork)
         return;
     }
+#ifdef _WIN32
     if (!v.voice || !v.started) return;
     if (pause) v.voice->Stop(0);                     // (XAudio2: Stop keeps the position, Start resumes)
     else v.voice->Start(0);
+#else
+
+#endif
 }
 
-u32 XAudio2SoundBackend::GetStatus(Buffer b) {
+u32 GameSoundBackend::GetStatus(Buffer b) {
     Impl& d = *impl_;
     auto it = d.voices.find(b);
     if (it == d.voices.end()) return 0;
@@ -704,13 +824,17 @@ u32 XAudio2SoundBackend::GetStatus(Buffer b) {
         std::lock_guard g(d.lock);
         return d.bridge.Ended(b, d.vpModel) ? 0 : 1;   // (L8: a one-shot voice ends after its last sample)
     }
+#ifdef _WIN32
     if (!it->second.voice || !it->second.started) return 0;
     XAUDIO2_VOICE_STATE st;
     it->second.voice->GetState(&st, XAUDIO2_VOICE_NOSAMPLESPLAYED);
     return st.BuffersQueued > 0 ? 1 : 0;
+#else
+    return 0;
+#endif
 }
 
-void XAudio2SoundBackend::Release(Buffer b) {
+void GameSoundBackend::Release(Buffer b) {
     Impl& d = *impl_;
     auto it = d.voices.find(b);
     if (it == d.voices.end()) return;
@@ -724,45 +848,45 @@ void XAudio2SoundBackend::Release(Buffer b) {
     d.ds.ReleaseVoice(b);
 }
 
-void XAudio2SoundBackend::SetVolume(Buffer b, s32 volume) {
+void GameSoundBackend::SetVolume(Buffer b, s32 volume) {
     impl_->ds.SetVolume(b, volume);
     impl_->Changed(b);
 }
 
-void XAudio2SoundBackend::SetFrequency(Buffer b, u32 hz) {
+void GameSoundBackend::SetFrequency(Buffer b, u32 hz) {
     if (auto it = impl_->voices.find(b); it != impl_->voices.end()) it->second.stepHz = hz;
     impl_->ds.SetFrequency(b, hz);
     impl_->Changed(b);
 }
 
-void XAudio2SoundBackend::SetMixBins(Buffer b, const sound::MixBin* bins, u32 count) {
+void GameSoundBackend::SetMixBins(Buffer b, const sound::MixBin* bins, u32 count) {
     std::vector<xds::MixBinVolume> v(count);
     for (u32 i = 0; i < count; ++i) v[i] = {bins[i].bin, bins[i].volume};
     impl_->ds.SetMixBins(b, v.data(), count);
     impl_->Changed(b);
 }
 
-void XAudio2SoundBackend::SetMinDistance(Buffer b, f32 d, u32 apply) {
+void GameSoundBackend::SetMinDistance(Buffer b, f32 d, u32 apply) {
     impl_->ds.SetMinDistance(b, d, apply);
     if (apply == 0) impl_->Changed(b);
 }
 
-void XAudio2SoundBackend::SetMaxDistance(Buffer b, f32 d, u32 apply) {
+void GameSoundBackend::SetMaxDistance(Buffer b, f32 d, u32 apply) {
     impl_->ds.SetMaxDistance(b, d, apply);
     if (apply == 0) impl_->Changed(b);
 }
 
-void XAudio2SoundBackend::SetPosition(Buffer b, f32 x, f32 y, f32 z, u32 apply) {
+void GameSoundBackend::SetPosition(Buffer b, f32 x, f32 y, f32 z, u32 apply) {
     impl_->ds.SetBufferPosition(b, x, y, z, apply);
     if (apply == 0) impl_->Changed(b);
 }
 
-void XAudio2SoundBackend::SetVelocity(Buffer b, f32 x, f32 y, f32 z, u32 apply) {
+void GameSoundBackend::SetVelocity(Buffer b, f32 x, f32 y, f32 z, u32 apply) {
     impl_->ds.SetBufferVelocity(b, x, y, z, apply);
     if (apply == 0) impl_->Changed(b);
 }
 
-void XAudio2SoundBackend::SetRolloffCurve(Buffer b, const f32* points, u32 count, u32 apply) {
+void GameSoundBackend::SetRolloffCurve(Buffer b, const f32* points, u32 count, u32 apply) {
     impl_->ds.SetRolloffCurve(b, points, count, apply);
     if (apply == 0) impl_->Changed(b);
 }
@@ -773,9 +897,10 @@ void XAudio2SoundBackend::SetRolloffCurve(Buffer b, const f32* points, u32 count
 // the game thread by Deliver. (L) The console plays the stream as a hardware voice through the VP / GP / EP like the
 // other 2D voices (its mix bins, headroom and the EP's down-mix): not modelled; the volume is 10^(hundredths / 2000).
 // Without a device (InitOffline) a packet completes when the real time since the stream's start passes its end.
+#ifdef _WIN32
 class XAudio2Stream final : public sound::SoundStream, public IXAudio2VoiceCallback {
 public:
-    XAudio2Stream(XAudio2SoundBackend::Impl& owner, u16 format, u16 channels, u32 rate, u16 bits,
+    XAudio2Stream(GameSoundBackend::Impl& owner, u16 format, u16 channels, u32 rate, u16 bits,
                   sound::SoundBackend::StreamCallback cb)
         : owner_(owner), format_(format), channels_(channels), rate_(rate), bits_(bits), callback_(std::move(cb)) {
         LARGE_INTEGER f;
@@ -926,7 +1051,7 @@ private:
         }
     }
 
-    XAudio2SoundBackend::Impl& owner_;
+    GameSoundBackend::Impl& owner_;
     u16 format_, channels_;
     u32 rate_;
     u16 bits_;
@@ -942,6 +1067,7 @@ private:
     std::vector<std::pair<u64, u64>> done_;
 };
 
+#endif
 // Mode::Vp: the XMV library's stream (XMVDecoder_EnableAudioStream 0x00264866: DSSTREAMDESC {0, 2 packets, the
 // track's format, the packet callback 0x00264815, the decoder}) as a stream voice of the sound layer's kind: the
 // library's CMcpxStream on the bridge (VpStream.h; open items round 5, KNOWN_ISSUES #71: register for register
@@ -949,7 +1075,7 @@ private:
 // DirectSoundDoWork that completed the packet.
 class VpMovieStream final : public sound::SoundStream {
 public:
-    VpMovieStream(XAudio2SoundBackend& owner, XAudio2SoundBackend::Impl& d, XAudio2SoundBackend::Buffer b)
+    VpMovieStream(GameSoundBackend& owner, GameSoundBackend::Impl& d, GameSoundBackend::Buffer b)
         : owner_(owner), d_(d), b_(b) {}
     ~VpMovieStream() override { owner_.Release(b_); }   // IDirectSoundStream_Release (the dtor flushes)
     vp::McpxStream* Mcpx() const;
@@ -987,9 +1113,9 @@ public:
     void SetVolume(s32 hundredthsDb) override { owner_.SetVolume(b_, hundredthsDb); }
 
 private:
-    XAudio2SoundBackend& owner_;
-    XAudio2SoundBackend::Impl& d_;
-    XAudio2SoundBackend::Buffer b_;
+    GameSoundBackend& owner_;
+    GameSoundBackend::Impl& d_;
+    GameSoundBackend::Buffer b_;
 };
 
 vp::McpxStream* VpMovieStream::Mcpx() const {
@@ -997,11 +1123,11 @@ vp::McpxStream* VpMovieStream::Mcpx() const {
     return it == d_.voices.end() ? nullptr : it->second.mcpx.get();
 }
 
-std::unique_ptr<sound::SoundStream> XAudio2SoundBackend::CreateStream(const std::vector<u8>& format,
+std::unique_ptr<sound::SoundStream> GameSoundBackend::CreateStream(const std::vector<u8>& format,
                                                                       StreamCallback completed) {
     if (format.size() < 16) return nullptr;
     auto r16 = [&](size_t o) { return u16(format[o] | format[o + 1] << 8); };
-    const u16 tag = r16(0), channels = r16(2), bits = r16(14);
+    const u16 tag = r16(0), channels = r16(2);
     const u32 rate = u32(r16(4)) | u32(r16(6)) << 16;
     if ((tag != 0x69 && tag != 1) || !channels || !rate) return nullptr;
     if (impl_->mode == Mode::Vp) {
@@ -1013,18 +1139,26 @@ std::unique_ptr<sound::SoundStream> XAudio2SoundBackend::CreateStream(const std:
         }
         it->second.mcpx->SetCallback([cb = std::move(completed)](u32 context, u32 status) {
             if (!cb) return;
+#ifdef _WIN32
             LARGE_INTEGER c;
             QueryPerformanceCounter(&c);
             cb(context, status, u64(c.QuadPart));
+#else
+            cb(context, status, SDL_GetPerformanceCounter());
+#endif
         });
         return std::make_unique<VpMovieStream>(*this, *impl_, b);
     }
-    auto s = std::make_unique<XAudio2Stream>(*impl_, tag, channels, rate, bits, std::move(completed));
+#ifdef _WIN32
+    auto s = std::make_unique<XAudio2Stream>(*impl_, tag, channels, rate, r16(14), std::move(completed));
     if (!s->Valid()) return nullptr;
     return s;
+#else
+    return nullptr;
+#endif
 }
 
-s32 XAudio2SoundBackend::SynchPlayback() {
+s32 GameSoundBackend::SynchPlayback() {
     Impl& d = *impl_;
     if (d.mode == Mode::Vp) {                         // CMcpxAPU_SynchPlayback 0x0024AC93 over every stream voice
         std::vector<vp::McpxStream*> all;
@@ -1034,12 +1168,14 @@ s32 XAudio2SoundBackend::SynchPlayback() {
         vp::McpxStream::SynchPlayback(d.gameFifo, d.bridge, all);
         return 0;
     }
+#ifdef _WIN32
     for (XAudio2Stream* s : d.streams)
         if (s->WaitingSynch()) s->Start();
+#endif
     return 0;
 }
 
-void XAudio2SoundBackend::DoStreamWork() {
+void GameSoundBackend::DoStreamWork() {
     Impl& d = *impl_;
     if (d.mode == Mode::Vp) {
         // the XMV library's DirectSoundDoWork (CloseDecoder's wait, GetNextFrame's retire): its stream part, as in
@@ -1052,10 +1188,12 @@ void XAudio2SoundBackend::DoStreamWork() {
             if (v.mcpx) v.mcpx->DoWork();
         return;
     }
+#ifdef _WIN32
     for (XAudio2Stream* s : d.streams) s->Deliver();
+#endif
 }
 
-void XAudio2SoundBackend::SetI3DL2Source(Buffer b, const std::array<s32, 9>& p, u32 apply) {
+void GameSoundBackend::SetI3DL2Source(Buffer b, const std::array<s32, 9>& p, u32 apply) {
     xds::I3DL2Source s;
     auto f = [&](u32 i) {
         f32 v;

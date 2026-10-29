@@ -2,6 +2,7 @@
 #include <SDL3/SDL.h>
 #include "core/XbeImage.h"
 #include "platform/common/MovieService.h"
+#include "platform/common/GameSoundBackend.h"
 #include "core/fs/Vfs.h"
 #include "game/app/App.h"
 #include "game/app/SaveStorage.h"
@@ -15,6 +16,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <stdexcept>
 
 namespace {
 volatile std::sig_atomic_t stopping = 0;
@@ -90,7 +92,19 @@ int Run(int argc, char** argv) {
     services.readPad = [&](fut::u32 port) { return port == 0 && gamepad ? &pad : nullptr; };
     services.renderer = &renderer;
     services.saves = &saves;
-    fut::platform::MovieService movies(vfs, nullptr, fut::xbe::GameImage().Bytes());
+    fut::platform::GameSoundBackend::Options audioOptions;
+    audioOptions.stepStatus = true;
+    fut::platform::GameSoundBackend soundBackend(audioOptions);
+    std::vector<fut::u8> effects;
+    if (!vfs.ReadFile("xbox/dsstdfx.bin", effects)) {
+        std::fprintf(stderr, "audio effects image missing\n"); return 1;
+    }
+    soundBackend.LoadXbeTables(fut::xbe::GameImage().Bytes());
+    soundBackend.SetEffectsImage(effects);
+    if (!soundBackend.Init()) { std::fprintf(stderr, "native audio initialization failed\n"); return 1; }
+    fut::platform::MovieService movies(vfs, &soundBackend, fut::xbe::GameImage().Bytes());
+    fut::sound::XboxSound sound(&soundBackend, services.readFile);
+    services.sound = &sound;
     services.movies = &movies;
     services.qpf = SDL_GetPerformanceFrequency();
     fut::text::CreateAppFont(services.readFile);
@@ -100,8 +114,9 @@ int Run(int argc, char** argv) {
         if (gamepad && p.Port() == 0) SDL_RumbleGamepad(gamepad.get(), p.motorLeft, p.motorRight, 100);
     };
     if (!app.Init(nullptr)) { std::fprintf(stderr, "App::Init failed\n"); return 1; }
-    std::fprintf(stderr, "PREVIEW: audio is not connected; movies run without audio; use isolated test saves only\n");
+    std::fprintf(stderr, "PREVIEW: native audio/movie services connected; use isolated test saves only\n");
     for (int frame = 0; !stopping && (!frames || frame < frames); ++frame) {
+        if (!soundBackend.Healthy()) throw std::runtime_error("native audio pipeline failed");
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) stopping = 1;

@@ -66,6 +66,6 @@ The descriptor sets at logical 0x2747B0 and 0x274820 resolve to PAL 0x274710 and
 pointers in both sets, decodes the first packet's frames and rejects an altered
 image. This is a decoder smoke check, not visual equivalence or complete playback.
 
-The common movie service now has a native SDL clock/sleep path and is attached
-to the Linux host without audio. Audible output, full movie playback, PAL
+The common movie service uses SDL clock/sleep and the shared Xbox sound backend
+on Linux. The VP/GP/EP mixer now feeds an SDL audio stream. Audible output, full movie playback, PAL
 gameplay, localization, timing and save compatibility remain separate checks.

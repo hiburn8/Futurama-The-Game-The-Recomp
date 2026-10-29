@@ -1,8 +1,9 @@
 # Native Linux preview
 
 This experimental host uses SDL3 for its window and controller and DXVK Native
-for D3D11 on Vulkan. It does not require a Wine runtime. Movie services have a
-native clock; audio output is not connected yet. A successful build is not a gameplay acceptance result.
+for D3D11 on Vulkan. It does not require a Wine runtime. Movie and audio services
+share a native clock. The existing Xbox VP/GP/EP mixer feeds a bounded SDL audio
+stream; Windows retains XAudio2. A successful build is not gameplay acceptance.
 The Windows target remains available through the existing build configuration.
 
 ## Dependencies
@@ -35,6 +36,12 @@ The optional data folder enables audio-table/effects tests and the movie path
 enables the first-packet decoder smoke test. Inputs must be supplied locally and
 must never be committed. See [PAL-DATA.md](PAL-DATA.md)
 for the accepted image and the limits of the current table bindings.
+
+With the native preview enabled, CTest also runs `native_sound_pipeline` against
+the owned data folder using SDL's dummy driver. It checks nonzero offline PCM,
+queue consumption, voice completion, joined shutdown and missing-effects refusal.
+The dummy driver is set only for that test. Physical output, complete movies and
+A/V synchronization require separate device checks.
 
 Compile the renderer's four HLSL entry points to DXBC before launching:
 

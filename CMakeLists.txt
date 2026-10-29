@@ -145,10 +145,14 @@ if(NOT WIN32)
         find_library(DXVK_DXGI_LIBRARY NAMES dxvk_dxgi HINTS "${DXVK_ROOT}/lib" REQUIRED)
         find_path(SDL3_INCLUDE_DIR SDL3/SDL.h HINTS "${SDL3_ROOT}/include" REQUIRED)
         find_library(SDL3_LIBRARY NAMES SDL3 HINTS "${SDL3_ROOT}/lib" REQUIRED)
+        find_package(Threads REQUIRED)
+        add_library(fut_audio_native STATIC src/platform/common/GameSoundBackend.cpp)
+        target_include_directories(fut_audio_native PRIVATE src "${SDL3_INCLUDE_DIR}")
+        target_link_libraries(fut_audio_native PUBLIC fut_core "${SDL3_LIBRARY}" Threads::Threads)
         add_executable(fut_native_preview app/linux/Main.cpp src/platform/common/MovieService.cpp
             src/render/TextureDecode.cpp src/render/xd3d/D3D11Device.cpp)
         target_include_directories(fut_native_preview PRIVATE src "${DXVK_INCLUDE_DIR}" "${SDL3_INCLUDE_DIR}")
-        target_link_libraries(fut_native_preview PRIVATE fut_core "${DXVK_D3D11_LIBRARY}" "${DXVK_DXGI_LIBRARY}" "${SDL3_LIBRARY}")
+        target_link_libraries(fut_native_preview PRIVATE fut_audio_native "${DXVK_D3D11_LIBRARY}" "${DXVK_DXGI_LIBRARY}" "${SDL3_LIBRARY}")
         set_target_properties(fut_native_preview PROPERTIES OUTPUT_NAME FuturamaRecomp)
     endif()
     include(CTest)
@@ -159,6 +163,15 @@ if(NOT WIN32)
         set(FUT_PAL_DATA "" CACHE PATH "Optional owned PAL disc folder for audio data checks")
         if(FUT_PAL_DATA)
             add_test(NAME pal_audio_binding COMMAND fut_pal_audio_test "${FUT_PAL_DATA}")
+        endif()
+        if(FUT_NATIVE_PREVIEW)
+            add_executable(fut_native_sound_test tests/native_sound.cpp)
+            target_include_directories(fut_native_sound_test PRIVATE src "${SDL3_INCLUDE_DIR}")
+            target_link_libraries(fut_native_sound_test PRIVATE fut_audio_native)
+            if(FUT_PAL_DATA)
+                add_test(NAME native_sound_pipeline COMMAND fut_native_sound_test "${FUT_PAL_DATA}")
+                set_tests_properties(native_sound_pipeline PROPERTIES ENVIRONMENT "SDL_AUDIODRIVER=dummy" TIMEOUT 30)
+            endif()
         endif()
         add_executable(fut_pal_image_test tests/pal_image.cpp src/core/XbeImage.cpp)
         target_include_directories(fut_pal_image_test PRIVATE src)
@@ -186,7 +199,7 @@ add_library(fut_render STATIC
     src/platform/win32/Window.cpp
     src/platform/win32/GamepadInput.cpp
     src/platform/win32/Launcher.cpp
-    src/platform/win32/XAudio2SoundBackend.cpp
+    src/platform/common/GameSoundBackend.cpp
     src/platform/common/MovieService.cpp
     src/render/TextureDecode.cpp
     src/render/xd3d/D3D11Device.cpp
