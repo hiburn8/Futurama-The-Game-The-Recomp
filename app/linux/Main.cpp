@@ -96,11 +96,18 @@ int Run(int argc, char** argv) {
     saves.readDisc = [&](const std::string& name, std::vector<fut::u8>& out) { return vfs.ReadFile(name, out); };
     auto gamepad = std::unique_ptr<SDL_Gamepad, decltype(&SDL_CloseGamepad)>(nullptr, SDL_CloseGamepad);
     fut::input::GamepadState pad;
+    fut::u32 insertions = 0, removals = 1; // App starts port 0 open; report initial absence.
     fut::game::app::AppServices services;
     services.language = language;
     services.readFile = saves.readDisc;
     services.streamFile = services.readFile;
     services.readPad = [&](fut::u32 port) { return port == 0 && gamepad ? &pad : nullptr; };
+    services.deviceChanges = [&](fut::u32& added, fut::u32& removed) {
+        added = insertions;
+        removed = removals;
+        insertions = removals = 0;
+        return (added | removed) != 0;
+    };
     services.renderer = &renderer;
     services.saves = &saves;
     fut::platform::GameSoundBackend::Options audioOptions;
@@ -132,11 +139,21 @@ int Run(int argc, char** argv) {
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) stopping = 1;
         }
-        if (gamepad && !SDL_GamepadConnected(gamepad.get())) gamepad.reset();
+        if (gamepad && !SDL_GamepadConnected(gamepad.get())) {
+            gamepad.reset();
+            removals = 1;
+            insertions = 0;
+        }
         if (!gamepad) {
             int count = 0;
             SDL_JoystickID* ids = SDL_GetGamepads(&count);
-            if (ids && count > 0) gamepad.reset(SDL_OpenGamepad(ids[0]));
+            if (ids && count > 0) {
+                gamepad.reset(SDL_OpenGamepad(ids[0]));
+                if (gamepad) {
+                    insertions = 1;
+                    removals = 0;
+                }
+            }
             SDL_free(ids);
         }
         pad = ReadPad(gamepad.get());
