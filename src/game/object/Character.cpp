@@ -235,6 +235,7 @@ Character::Character(LevelData& lvl, CharacterDef& d) : GameObject(lvl, d), cdef
     char buf[1024];
     std::snprintf(buf, sizeof buf, "character::%s", d.name.c_str());   // orig: sprintf
     node = new ni::NiNode;                            // (replaces the GameObject's node)
+    // HEAP-MIRROR: +0xB2 is heap garbage in the original; 0 here (won't do: KNOWN_ISSUES "Heap layout")
     node->name = buf;
     health = health4F8 = maxHealth = d.maxHealth;     // orig: +0x4F4 / +0x4F8 / +0x4FC = D+0x60
     heightOffset = d.boundCenter;                     // orig: +0x4D0 = D+0x9C
@@ -748,6 +749,8 @@ Player::Player(LevelData& lvl, CharacterDef& d, const ni::NiPoint3& pos, const n
         view = std::make_unique<ViewFile>("Cockpit\\Leela_vision.nif", "FPView", 1, lvl.renderer);   // FPView(1)
     agent = std::make_unique<AiAgent>(lvl, *this);    // orig: 0x0005DE4E (+0x58 = new(0x8A8) 0x0002E810)
     // orig: Player::Reset 0x00057680 (the parts with load-time state):
+    // HEAP-MIRROR: the new player block's and its body's never written bytes are heap garbage in the original (#33 /
+    // #41); the port's defaults here (won't do: KNOWN_ISSUES "Heap layout")
     node->flags &= ~ni::kNiAVHidden;
     health = maxHealth;                               // orig: +0x4F4 = +0x4FC
     if (lvl.hud) {                                    // (Reset's tail 0x000578E8: the HUD's weapon box emptied)

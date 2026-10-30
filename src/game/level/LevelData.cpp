@@ -113,6 +113,8 @@ void LevelData::ApplyInstances(const char* nodeName) {
 
 std::unique_ptr<phys::CollisionBox> LevelData::NewCollisionBox(f32 ex, f32 ey, f32 ez, f32 mass) {
     auto box = std::make_unique<phys::CollisionBox>(ex, ey, ez, mass, physic ? &physic->world : nullptr);
+    // HEAP-MIRROR: +0x154 is never written (heap garbage in the original); the port's default (won't do: KNOWN_ISSUES
+    // "Heap layout")
     return box;
 }
 

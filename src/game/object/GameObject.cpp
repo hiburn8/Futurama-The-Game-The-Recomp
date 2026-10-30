@@ -42,6 +42,7 @@ GameObject::GameObject(LevelData& lvl, Def& d) : level(lvl), def(&d) {   // orig
         defPrev = tail;
     }
     node = new ni::NiNode;
+    // HEAP-MIRROR: +0xB2 is heap garbage in the original (#40); 0 here (won't do: KNOWN_ISSUES "Heap layout")
 }
 
 GameObject::~GameObject() {                           // orig: 0x00096D90

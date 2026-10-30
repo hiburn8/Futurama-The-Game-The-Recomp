@@ -107,6 +107,8 @@ void Session::Start(const std::string& arg) {         // orig: 0x000C2340
     // above the arrays; that is the default for the levels not listed). Taken from the original's runs of each level
     // (extracted/analysis/start_oracle: the COLLSCRATCH line, or collscratch.txt from the runs with the same COLLBSP
     // addresses); the number of arrays below the block.
+    // TODO(#36): a level loaded after another one (the normal route) and level4-1 may order differently from the
+    // original; open (KNOWN_ISSUES #36, "Heap layout")
     static constexpr std::pair<const char*, s32> kScratchRank[] = {
         {"level1-1", 0}, {"level1-2", 1}, {"level2-1", 0}, {"level2-2", 0}, {"level2-4", 0}, {"level2-6", 0},
         {"level3-3", 1}, {"level3-4", 0}, {"level5-1", 0}, {"level5-2", 0}, {"level5-3", 0},

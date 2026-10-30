@@ -69,7 +69,9 @@ f32 GetF(VmAddr a) {
 }
 const char* Str(VmAddr a) { return a ? static_cast<const char*>(mem::FromVmAddr(a)) : nullptr; }
 void Set(VmAddr a, u32 v) { std::memcpy(mem::FromVmAddr(a), &v, 4); }
-void SetByte(VmAddr a, u8 v) { std::memcpy(mem::FromVmAddr(a), &v, 1); }   // (the low-byte results, 0x000B19CB)
+// (the low-byte results, 0x000B19CB) HEAP-MIRROR: bytes 1-3 keep the argument word, a VM heap address that matches
+// the original's only where the heap layout does; the scripts read byte 0 (won't do: KNOWN_ISSUES #39, "Heap layout")
+void SetByte(VmAddr a, u8 v) { std::memcpy(mem::FromVmAddr(a), &v, 1); }
 void SetF(VmAddr a, f32 v) { std::memcpy(mem::FromVmAddr(a), &v, 4); }
 
 using ni::detail::F;

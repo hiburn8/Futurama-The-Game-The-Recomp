@@ -4081,7 +4081,8 @@ void Player::UpdateLockMarker() {                     // orig: vf154 0x00058FA0
     }
     if (ni::NiMaterialProperty* m = markerMaterial.Get()) {   // +0xC28: red with a target, else blue; the alpha
         // (0x0005A202: one injected word per reach; first person: the 0 of 0x0005A16A)
-        u32 stale = 0;
+        u32 stale = 0;                                // HEAP-MIRROR: a stale word in the original; 0 here (won't do:
+                                                      // KNOWN_ISSUES "Heap layout")
         if (!firstPerson) range = std::bit_cast<f32>(stale);
         // FLD; FLD; FCOMP 15.0 [0x00297250]; TEST AH,0x41; JNE: kept unless above 15
         const double s = range > 15.0f ? 15.0 : double(range);

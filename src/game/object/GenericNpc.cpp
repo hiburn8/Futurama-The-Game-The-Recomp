@@ -507,6 +507,10 @@ AiAgent::AiAgent(LevelData& lvl, Character& c) : level(lvl), profile(kAIDefaultP
     if (c.cdef.IsType(2)) player = static_cast<Player*>(&c);
     else npc = static_cast<GenericNpc*>(&c);
     level.aiAgents.insert(level.aiAgents.begin(), this);   // head of (S+0x114)+4
+    // HEAP-MIRROR: +0x1AC / +0x234 and the goal +0x890..+0x8A7 are heap garbage in the original; the port's defaults
+    // (won't do: KNOWN_ISSUES "Heap layout")
+    // HEAP-MIRROR: the finder's goal / start +0x88 / +0x8C are heap garbage in the original too (0x00032240 does not
+    // write them): null here, so Repath always searches
     // (the +0x84 path finder's arrays new 0xC80 / 0x320 / 0x320 are the AiArray members; NOT PORTED: the global
     // matrix 0x002DBB50)
 }
@@ -1568,10 +1572,12 @@ void AiAgent::SetProfile(const std::array<u32, 26>& p) {   // orig: 0x0002CF00 (
 GenericNpc::GenericNpc(LevelData& lvl, GenericNPCDef& d, const NiPoint3& pos, const ni::NiMatrix3& rot)
     : Character(lvl, d) {                             // orig: 0x00047B80
     // (H) +0x500 is written by no constructor (heap garbage until the first pass 0's UpdateCameraDistance)
+    // HEAP-MIRROR: the port's default here (won't do: KNOWN_ISSUES "Heap layout")
     lvl.genericNpcs.push_back(this);                  // S+0x9C (+0x8B0 next, +0x8B4 prev)
     body = std::make_unique<phys::CharBody>(d.boundWidth, d.boundHeight, d.boundDepth,
                                             lvl.physic ? &lvl.physic->world : nullptr);   // new(0x48) 0x000AF0D0
     // (H) the body constructor never writes +0x45 nor its shape's +0x9C: heap garbage in the original (KNOWN_ISSUES #41)
+    // HEAP-MIRROR: the port's defaults here (won't do: KNOWN_ISSUES "Heap layout")
     body->shape.b1 = flag60;                          // shape+0xB1
     if (flag60) body->b1A = 1;
     body->owner = this;                               // vf28
@@ -1926,10 +1932,59 @@ void GenericNpc::Shoot(u32 kind, const NiPoint3& pos, const ni::NiMatrix3& rot, 
     const GenericNPCDef& d = npcDef();
     ProjectileDef* pd = kind == 0x11 ? d.projectile15C : d.weapon158;
     if (pd) {
-        if (d.value144 == 4 || d.value144 == 0xA) {
-            // (4: no definition writes it, U; 0xA: the flower plant's five random shots, no instance in the shipped
-            //  stages)
-            NotPorted("GenericNpc::Shoot: the shotgun / spread kinds (0x000494B4 / 0x0004972F)");
+        if (d.value144 == 4) {
+            // 0x000494B4: the toxic warrior's shotgun (Spawn writes D+0x144 = 4 for the plain / ":2" toxicwarrior,
+            // 0x0004AED2): five lasers from pos + 0.15 * (rot * UNIT_Z), each turned by Y / X rotations of
+            // (2 rand - 1) * 0.09, its definition's speed re-rolled before each spawn
+            const NiPoint3 dir = ni::MulVector(rot, {1.0f, 0.0f, 0.0f});   // 0x00011770 (UNIT_X 0x002D77E0)
+            const NiPoint3 z = ni::MulVector(rot, {0.0f, 0.0f, 1.0f});     // (UNIT_Z 0x002D77F8)
+            const NiPoint3 off{F(double(z.x) * 0.15f), F(double(z.y) * 0.15f), F(double(z.z) * 0.15f)};   // [0x00293AA8]
+            const NiPoint3 p{F(double(off.x) + pos.x), F(double(off.y) + pos.y), F(double(off.z) + pos.z)};
+            auto* ld = static_cast<LaserDef*>(pd);   // (the toxicwarrior's ENEMY-LASERSPAM)
+            for (int i = 0; i < 5; ++i) {
+                const ni::NiMatrix3 Y = ni::MakeYRotation(F((RandUnit() * 2.0 - 1.0) * 0.09f));   // [0x002976E8]
+                const ni::NiMatrix3 X = ni::MakeXRotation(F((RandUnit() * 2.0 - 1.0) * 0.09f));   // 0x00103070
+                const ni::NiMatrix3 m = ni::Multiply(ni::Multiply(Y, X), rot);   // 0x00013B30 x2
+                const double r = RandUnit();
+                ld->value68[0] = 0.0f;                // D+0x68 / +0x6C / +0x70 (written on every shot)
+                ld->value68[1] = 1.0f;
+                ld->value68[2] = 0.0f;
+                ld->value1C = F((r * 2.0 - 1.0) * 20.0f + 80.0f);   // [0x00295AB4], [0x002976D4]
+                GameObject* o = pd->Spawn(level, &level, p, m, "Shotgun-Laser");   // vf14 (0x002976D8)
+                if (auto* l = dynamic_cast<Laser*>(o)) {
+                    l->damage = F(double(l->damage) * 3.0f);   // +0x148 x [0x0029563C]
+                    l->shooter = this;                // +0x40
+                    l->speed = 80.0f;                 // +0x48 = 0x42A00000
+                }
+            }
+            // 0x0004966A: at p again (the same sums), then "effect_smoke" (0x002976C4; Session::FindDef 0x000C3F10,
+            // no null test in the original)
+            if (d.particles164) (void)d.particles164->SpawnEffect(level, p, dir);   // vf20
+            if (Def* smoke = level.defs ? level.defs->Find("effect_smoke") : nullptr)
+                (void)smoke->SpawnEffect(level, p, dir);
+            if (kind != 0x11 && !silent) {            // (unlike the other kinds: no test of the last spawn)
+                const NiPoint3 w = GetWorldPosition();   // vf34
+                VoiceMaxDistance(SoundAt(4, &w, 3, 0, nullptr), d.value198);   // 0x00049709; 0x00049719
+            }
+        } else if (d.value144 == 0xA) {
+            // 0x0004972F: the flowerplant's spray (level1-3): ten projectiles, each turned by X / Y / Z rotations of
+            // (rand - 0.5) * 0.6 (FSUB [0x00293AA0]; FMUL [0x002976C0]) in that rand order, then by rot
+            GameObject* o = nullptr;
+            for (int i = 0; i < 10; ++i) {
+                const ni::NiMatrix3 X = ni::MakeXRotation(F((RandUnit() - 0.5f) * 0.6f));   // 0x00103070
+                const ni::NiMatrix3 Y = ni::MakeYRotation(F((RandUnit() - 0.5f) * 0.6f));   // 0x001030B0
+                const ni::NiMatrix3 Z = ni::MakeZRotation(F((RandUnit() - 0.5f) * 0.6f));   // 0x001030F0
+                const ni::NiMatrix3 m = ni::Multiply(ni::Multiply(ni::Multiply(X, Y), Z), rot);   // 0x00013B30 x3
+                o = pd->Spawn(level, &level, pos, m, "Enemy-Laser");   // vf14 (0x002976B4 for every kind)
+                if (auto* pr = dynamic_cast<Projectile*>(o)) {
+                    pr->shooter = this;               // +0x40 (no +0x24 / +0x74 stores on this path)
+                    pr->speed = 80.0f;                // +0x48 = 0x42A00000
+                }
+            }
+            if (o && !silent) {                       // 0x00049ABC: the shared tail tests the last spawn only
+                const NiPoint3 p = GetWorldPosition();   // vf34
+                VoiceMaxDistance(SoundAt(4, &p, 3, 0, nullptr), d.value198);
+            }
         } else {
             ni::NiMatrix3 m = rot;                    // esp+0x40 (12 dwords of rot)
             const bool goon = d.value144 == 0xB && crt::StrICmp(d.name.c_str(), "goonsneak") == 0;   // 0x002976A8
@@ -5387,6 +5442,7 @@ Destructor::Destructor(LevelData& lvl, GenericNPCDef& d, const NiPoint3& pos, co
                                               lvl.physic ? &lvl.physic->world : nullptr);   // (the mass 10.0f: unread)
     // (H) +0x19 / +0x45 of the new body and its shape's +0x9C are never written (heap garbage, KNOWN_ISSUES #41; +0x45
     // is written by the first integrate before any read, +0x19 has no reader, +0x9C is read by the first integrate)
+    // HEAP-MIRROR: the port's defaults here (won't do: KNOWN_ISSUES "Heap layout")
     vortex->SetEnabled(true);                         // vf34(1): the ctor already enabled and listed the shape
     vortex->b1A = 1;                                  // +0x1A
     vortex->integratePinned = 1;                      // +0x1B

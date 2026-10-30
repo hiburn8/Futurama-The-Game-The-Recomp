@@ -56,7 +56,8 @@ double Len2(const ni::NiPoint3& v) { return (double(v.x) * v.x + double(v.y) * v
 }  // namespace
 
 Static::Static(LevelData& lvl, StaticDef& d) : GameObject(lvl, d) {   // orig: 0x00095110
-    // +0xD8 / +0xDC are never written by the constructor: heap leftovers in the original (the tests' hook), 0 here
+    // +0xD8 / +0xDC are never written by the constructor: heap leftovers in the original, 0 here
+    // HEAP-MIRROR: won't do (KNOWN_ISSUES "Heap layout")
 }
 
 Static::~Static() {                                   // orig: 0x00095220
