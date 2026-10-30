@@ -8,7 +8,7 @@ import subprocess
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--compiler", required=True, type=pathlib.Path)
+    parser.add_argument("--compiler", required=True)
     parser.add_argument("--out", required=True, type=pathlib.Path)
     args = parser.parse_args()
     source = (
@@ -29,7 +29,7 @@ def main():
         temporary = args.out / f"{entry}.dxbc.tmp"
         subprocess.run(
             [
-                str(args.compiler),
+                args.compiler,
                 "-x",
                 "hlsl",
                 "-b",

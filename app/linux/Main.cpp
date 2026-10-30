@@ -6,6 +6,8 @@
 #include "platform/common/GameSoundBackend.h"
 #include "core/fs/Vfs.h"
 #include "game/app/App.h"
+#include "game/app/PauseMenu.h"
+#include "platform/common/RumbleState.h"
 #include "game/app/SaveStorage.h"
 #include "game/text/TextObject.h"
 #include "game/text/LanguageDb.h"
@@ -95,6 +97,22 @@ int Run(int argc, char** argv) {
     fut::game::app::HostSaveStorage saves(argv[5]);
     saves.readDisc = [&](const std::string& name, std::vector<fut::u8>& out) { return vfs.ReadFile(name, out); };
     auto gamepad = std::unique_ptr<SDL_Gamepad, decltype(&SDL_CloseGamepad)>(nullptr, SDL_CloseGamepad);
+    fut::platform::RumbleState rumble;
+    bool rumbleFailureLogged = false;
+    auto rumbleSink = [&](std::uint16_t left, std::uint16_t right, unsigned duration) {
+        if (!gamepad) return true;
+        const bool ok = SDL_RumbleGamepad(gamepad.get(), left, right, duration);
+        if (!ok && !rumbleFailureLogged) {
+            std::fprintf(stderr, "controller rumble unavailable: %s\n", SDL_GetError());
+            rumbleFailureLogged = true;
+        }
+        return ok;
+    };
+    struct RumbleStop {
+        fut::platform::RumbleState& state;
+        decltype(rumbleSink)& sink;
+        ~RumbleStop() { state.Stop(sink); }
+    } rumbleStop{rumble, rumbleSink};
     fut::input::GamepadState pad;
     fut::u32 insertions = 0, removals = 1; // App starts port 0 open; report initial absence.
     fut::game::app::AppServices services;
@@ -130,7 +148,7 @@ int Run(int argc, char** argv) {
     app.ntsc = !vfs.IsPal(); // Select PAL movie names and splash assets before Init.
     const auto base = SDL_GetPerformanceCounter();
     app.input.onRumble = [&](const fut::input::Pad& p) {
-        if (gamepad && p.Port() == 0) SDL_RumbleGamepad(gamepad.get(), p.motorLeft, p.motorRight, 100);
+        if (p.Port() == 0) rumble.SetDesired(p.motorLeft, p.motorRight);
     };
     if (!app.Init(nullptr)) { std::fprintf(stderr, "App::Init failed\n"); return 1; }
     std::fprintf(stderr, "PREVIEW: native audio/movie services connected; use isolated test saves only\n");
@@ -141,6 +159,8 @@ int Run(int argc, char** argv) {
             if (event.type == SDL_EVENT_QUIT) stopping = 1;
         }
         if (gamepad && !SDL_GamepadConnected(gamepad.get())) {
+            rumble.SetDesired(0, 0);
+            rumble.Stop(rumbleSink);
             gamepad.reset();
             removals = 1;
             insertions = 0;
@@ -151,6 +171,7 @@ int Run(int argc, char** argv) {
             if (ids && count > 0) {
                 gamepad.reset(SDL_OpenGamepad(ids[0]));
                 if (gamepad) {
+                    rumble.Stop(rumbleSink);
                     insertions = 1;
                     removals = 0;
                 }
@@ -158,9 +179,11 @@ int Run(int argc, char** argv) {
             SDL_free(ids);
         }
         pad = ReadPad(gamepad.get());
+        rumble.Tick(SDL_GetTicks(), app.pause && app.pause->shown, rumbleSink);
         app.frame = frame;
         app.qpc = SDL_GetPerformanceCounter() - base;
         if (!app.Frame()) break;
+        rumble.Tick(SDL_GetTicks(), app.pause && app.pause->shown, rumbleSink);
     }
     std::fprintf(stderr, "native preview exited; draw calls: %u\n", device.draws());
     return 0;
