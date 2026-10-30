@@ -50,11 +50,65 @@ What I can't fully promise yet:
 
 - I haven't compared the final picture and sound with a real Xbox. The port sends exactly the same graphics and sound
   commands, but how they come out on actual hardware hasn't been checked.
-- In a few spots the original reads memory it never set up. The port uses fixed values there, so very rarely something
-  can happen a frame early (like a respawned enemy moving).
+- In a few spots the original reads memory it never set up, so what it does there depends on whatever ran before. The
+  port uses fixed values instead (see [Bug fixes](#bug-fixes)), so very rarely something can happen a little
+  differently, like a respawned enemy taking a different route.
 - The emulator I tested against does a few maths instructions (sine, cosine and a couple of others) slightly
   differently from a real Xbox, so those could be off in the very last bit.
 - Code that nothing ever reaches, like old debug features, is ported but untested.
+
+## Bug fixes
+
+The aim is 1:1, so the original's bugs stay in, even the ones you can see. There are just two kinds I did fix. In
+both, the original's behaviour depends on luck, and fixing them doesn't change how the game plays.
+
+### Memory the original never sets up
+
+In a few places the original reads a value it never set, so it gets whatever an earlier object left in that memory.
+What happens then depends on everything that ran before. The port starts these at zero, or at the default the code
+clearly expects. The tests still feed the original's leftover values into the port, so the code around them is
+still checked against the original bit for bit. These are all the ones I've found:
+
+- **Enemy route planning.** An enemy's route planner remembers the last trip it planned, but a new enemy never clears
+  that note. If a respawned enemy lands in a dead one's memory and wants the same trip, the original thinks it already
+  has a route, skips planning, and walks straight at its target for a moment. In the port it always plans the route.
+- **Characters' "on the ground" flags.** A new character's body starts with leftover ground and contact flags. In the
+  original that made a few enemies (the level 2-5 tank, a level 3-5 shooter, the level 5-1 Destructor) count as
+  standing on their first frame, so they started falling a frame late.
+- **The player's reset.** Resetting the player reads a field nothing ever sets. If there's leftover data in it, the
+  original treats it as an object and moves the player's model around. The port reads zero and skips that.
+- **The lock-on marker.** In third person its transparency is worked out from a leftover number. In the runs I
+  checked, it came out very close to half anyway. In the port it's exactly half.
+- **The high priest** (level 3-6). His summon timer and last warp spot start out as leftovers. The port starts both at
+  zero.
+- **Sound handles.** A few enemies and the level 4-1 rat ride check sound handles they never set. The port starts them
+  empty.
+- **Settings a config file leaves out.** Some object and character settings get copied from leftover memory when the
+  file doesn't give them. The port uses zero or the default. None of the game's own files rely on them.
+- **Objects' "frames since last drawn" counters.** These start out as leftovers too. The port starts them at zero.
+
+### Crashes and freezes
+
+The original skips some safety checks. It reads through empty pointers, divides by zero, writes to memory that's
+already been freed, and trusts sizes read from files. As far as all my testing shows, the game's own data and normal
+play never trigger any of these. But if one ever did, the Xbox would crash. The port checks instead and carries on:
+
+- a script that divides by zero gets 0;
+- an enemy with no dying animation just skips it;
+- a missing effect doesn't get spawned;
+- damaged or oversized files get rejected instead of overflowing.
+
+Running out of memory shows an error instead of freezing the game.
+
+### Bugs I kept
+
+Anything that changes what you see or how the game plays stays exactly as it was. For example:
+
+- Spawning a regular toxic warrior writes into the settings it shares with its other versions, so they can end up with
+  its shotgun.
+- The hit test for health triggers ignores the box's rotation and only checks five of its six sides.
+- The rat ride's steering is never reset, so a second ride starts with the last one's steering.
+- Setting a waypoint's rotation from a script stores a cosine where the angle should go.
 
 ## Building
 
