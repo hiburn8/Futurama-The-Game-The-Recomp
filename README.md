@@ -57,6 +57,45 @@ What I can't fully promise yet:
   differently from a real Xbox, so those could be off in the very last bit.
 - Code that nothing ever reaches, like old debug features, is ported but untested.
 
+## Building
+
+You need Windows, Visual Studio 2022 with the "Desktop development with C++" workload, and CMake 3.25 or newer.
+
+```
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release
+```
+
+## Playing
+
+The easy way: grab the zip from the [Releases](../../releases) page, unzip it anywhere and double-click
+`FuturamaRecomp.exe`. The first time, it asks for your disc image (pick your `.iso`, or the `default.xbe` inside your
+extracted folder) and remembers it from then on. Put the `.iso` (or a `futurama` folder with the extracted files)
+right next to the exe and it finds it by itself. Windows 10 or 11, 64-bit, nothing else to install.
+
+Built it yourself? Double-click works the same, or point it straight at your disc:
+
+```
+build\Release\FuturamaRecomp.exe <your futurama.iso or extracted folder>
+```
+
+Add `--size 1920x1080` to change the window size (the default is 1280x960). Saves go to
+`%APPDATA%\FuturamaRecomp\saves`, or wherever you point `--saves`.
+
+An Xbox controller just works. No controller? The keyboard does it too:
+
+| Keys | Xbox pad |
+| --- | --- |
+| W A S D | left stick |
+| I J K L | right stick |
+| arrow keys | d-pad |
+| Space / E / Left Ctrl / R | A / B / X / Y |
+| Q / F | White / Black |
+| Z / Shift | left / right trigger |
+| Enter / Esc | Start / Back |
+
+Have fun!
+
 ## Bug fixes
 
 The aim is 1:1, so the original's bugs stay in, even the ones you can see. There are just two kinds I did fix. In
@@ -109,42 +148,3 @@ Anything that changes what you see or how the game plays stays exactly as it was
 - The hit test for health triggers ignores the box's rotation and only checks five of its six sides.
 - The rat ride's steering is never reset, so a second ride starts with the last one's steering.
 - Setting a waypoint's rotation from a script stores a cosine where the angle should go.
-
-## Building
-
-You need Windows, Visual Studio 2022 with the "Desktop development with C++" workload, and CMake 3.25 or newer.
-
-```
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release
-```
-
-## Playing
-
-The easy way: grab the zip from the [Releases](../../releases) page, unzip it anywhere and double-click
-`FuturamaRecomp.exe`. The first time, it asks for your disc image (pick your `.iso`, or the `default.xbe` inside your
-extracted folder) and remembers it from then on. Put the `.iso` (or a `futurama` folder with the extracted files)
-right next to the exe and it finds it by itself. Windows 10 or 11, 64-bit, nothing else to install.
-
-Built it yourself? Double-click works the same, or point it straight at your disc:
-
-```
-build\Release\FuturamaRecomp.exe <your futurama.iso or extracted folder>
-```
-
-Add `--size 1920x1080` to change the window size (the default is 1280x960). Saves go to
-`%APPDATA%\FuturamaRecomp\saves`, or wherever you point `--saves`.
-
-An Xbox controller just works. No controller? The keyboard does it too:
-
-| Keys | Xbox pad |
-| --- | --- |
-| W A S D | left stick |
-| I J K L | right stick |
-| arrow keys | d-pad |
-| Space / E / Left Ctrl / R | A / B / X / Y |
-| Q / F | White / Black |
-| Z / Shift | left / right trigger |
-| Enter / Esc | Start / Back |
-
-Have fun!
