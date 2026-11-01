@@ -100,24 +100,24 @@ change anything you see or play, so I count them as matching.
 | 1-3 | Subway | 27,999 (~8 min) | Matches |
 | 1-4 | Old New York | 82,111 (~23 min) | Matches |
 | 1-5 | Red Light District | 25,691 (~7 min) | Matches |
-| 1-6 | New New York | 45,736 (~13 min) | Matches |
 | 1-7 | Uptown | 25,539 (~7 min) | Matches |
-| 2-1 | Canyon | 20,291 (~5.5 min) | Matches |
-| 2-2 | Mine | | Untested |
+| 1-6 | New New York | 45,736 (~13 min) | Matches |
+| 2-1 | Canyon | 43,898 (~12 min) | Matches |
+| 2-6 | Mine Tunnel | | Untested |
+| 2-2 | Mine | 25,288 (~7 min) | Matches |
 | 2-3 | Junkyard 1 | 30,415 (~8.5 min) | Matches |
 | 2-4 | Junkyard 2 | | Untested |
 | 2-5 | Junkyard 3 | | Untested |
-| 2-6 | Mine Tunnel | | Untested |
 | 3-1 | Courtyard I | | Untested |
 | 3-2 | Left Wing | 39,531 (~11 min) | Matches |
 | 3-3 | Right Wing | | Untested |
-| 3-4 | Inner Temple | | Untested |
-| 3-5 | Courtyard II | | Untested |
 | 3-6 | Courtyard III | | Untested |
+| 3-4 | Inner Temple | | Untested |
 | 4-1 | Bogad Swamp | | Untested |
 | 5-1 | Mom's HQ – Bender | | Untested |
 | 5-2 | Mom's HQ – Leela | | Untested |
 | 5-3 | Mom's HQ – Fry | | Untested |
+| 3-5 | Courtyard II (unused: not in the game's level order) | | Untested |
 
 What I can't fully promise yet:
 
