@@ -102,22 +102,22 @@ change anything you see or play, so I count them as matching.
 | 1-5 | Red Light District | 25,691 (~7 min) | Matches |
 | 1-7 | Uptown | 25,539 (~7 min) | Matches |
 | 1-6 | New New York | 45,736 (~13 min) | Matches |
-| 2-1 | Canyon | 43,898 (~12 min) | Matches |
-| 2-6 | Mine Tunnel | 7,117 (~2 min) | Matches |
-| 2-2 | Mine | 20,686 (~6 min) | Matches |
-| 2-3 | Junkyard 1 | 19,462 (~5.5 min) | Matches |
-| 2-4 | Junkyard 2 | 27,562 (~7.5 min) | Matches |
-| 2-5 | Junkyard 3 | 14,752 (~4 min) | Matches |
-| 3-1 | Courtyard I | 20,383 (~5.5 min) | Matches |
+| 2-1 | Weasel Canyon | 43,898 (~12 min) | Matches |
+| 2-6 | Run, Bender, Run | 7,117 (~2 min) | Matches |
+| 2-2 | The Mine Facility | 20,686 (~6 min) | Matches |
+| 2-3 | Red Rock Creek | 19,462 (~5.5 min) | Matches |
+| 2-4 | The Junkyard | 27,562 (~7.5 min) | Matches |
+| 2-5 | Rumble in the Junkyard | 14,752 (~4 min) | Matches |
+| 3-1 | Market Square | 20,383 (~5.5 min) | Matches |
 | 3-2 | Left Wing | 38,276 (~10.5 min) | Matches |
 | 3-3 | Right Wing | | Untested |
-| 3-6 | Courtyard III | | Untested |
+| 3-6 | Temple Courtyard | | Untested |
 | 3-4 | Inner Temple | | Untested |
-| 4-1 | Bogad Swamp | | Untested |
-| 5-1 | Mom's HQ – Bender | | Untested |
-| 5-2 | Mom's HQ – Leela | | Untested |
-| 5-3 | Mom's HQ – Fry | | Untested |
-| 3-5 | Courtyard II (unused: not in the game's level order) | | Untested |
+| 4-1 | Bogad Swamp Trail | | Untested |
+| 5-1 | Bender's Breakout | | Untested |
+| 5-2 | Leela's Last Laugh | | Untested |
+| 5-3 | Fry Fights Back | | Untested |
+| 3-5 | Courtyard II (removed) | | Untested |
 
 What I can't fully promise yet:
 
