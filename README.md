@@ -104,12 +104,12 @@ change anything you see or play, so I count them as matching.
 | 1-6 | New New York | 45,736 (~13 min) | Matches |
 | 2-1 | Canyon | 43,898 (~12 min) | Matches |
 | 2-6 | Mine Tunnel | 7,117 (~2 min) | Matches |
-| 2-2 | Mine | 25,288 (~7 min) | Matches |
-| 2-3 | Junkyard 1 | 30,415 (~8.5 min) | Matches |
-| 2-4 | Junkyard 2 | | Untested |
-| 2-5 | Junkyard 3 | | Untested |
-| 3-1 | Courtyard I | | Untested |
-| 3-2 | Left Wing | 39,531 (~11 min) | Matches |
+| 2-2 | Mine | 20,686 (~6 min) | Matches |
+| 2-3 | Junkyard 1 | 19,462 (~5.5 min) | Matches |
+| 2-4 | Junkyard 2 | 27,562 (~7.5 min) | Matches |
+| 2-5 | Junkyard 3 | 14,752 (~4 min) | Matches |
+| 3-1 | Courtyard I | 20,383 (~5.5 min) | Matches |
+| 3-2 | Left Wing | 38,276 (~10.5 min) | Matches |
 | 3-3 | Right Wing | | Untested |
 | 3-6 | Courtyard III | | Untested |
 | 3-4 | Inner Temple | | Untested |
