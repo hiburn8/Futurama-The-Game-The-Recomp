@@ -412,6 +412,10 @@ public:
     std::vector<u32> zPriority;                      // +0x104 (one per listed geometry; "NiData_Zprio" reads a %f)
 };
 
+// orig: 0x0013C9A0 (cdecl, recursive): the width +0xE4 of every outline in the subtree (an outline's own children are
+// not walked; a non-node, null included, does nothing). The NPC death fade (Character::PrepareRender) calls it.
+void SetOutlineWidth(NiAVObject* object, f32 width);
+
 class NiGeometry : public NiAVObject {
 public:
     FUT_NI_CLASS(NiGeometry)

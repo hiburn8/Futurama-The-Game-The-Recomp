@@ -3415,8 +3415,15 @@ void Player::UpdateAnimation(f32 dt) {                // orig: 0x0005A790
             } else {
                 flag = 0;
             }
-        } else if (roll95 || roll96 || roll97 || roll98) {
-            NotPorted("Player: rolls");
+        } else if (const s32 roll = roll95 && !IsAnimPlaying(0x5E)   ? 0x5E    // orig: 0x0005B738..0x0005B85F: the
+                                    : roll96 && !IsAnimPlaying(0x5F) ? 0x5F    // first requested roll not already
+                                    : roll97 && !IsAnimPlaying(0x60) ? 0x60    // playing (rolll / rollr / rollb /
+                                    : roll98 && !IsAnimPlaying(0x61) ? 0x61    // rollf); none: the next test
+                                                                     : -1;
+                   roll >= 0) {
+            BeginRootMotion();                        // 0x000368A0, before the play
+            PlayAnimById(roll, true, false, false, 0.0f);   // 0x0003CE70(roll, 1, 0, 0, 0)
+            SoundAt(roll == 0x60 ? 0x55 : 0x56, nullptr, 3, 0, node.Get());   // 0x0003FFC0(id, node +0x2C, 3, 0)
             flag = 0;
         } else if (IsAnimPlaying(0x5E) || IsAnimPlaying(0x5F) || IsAnimPlaying(0x60) || IsAnimPlaying(0x61)) {
             if (finished) locomotion();               // WAIT_END

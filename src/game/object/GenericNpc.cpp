@@ -4955,6 +4955,13 @@ void Stormtrooper::Damage(f32 amount, Character* attacker) {   // orig: 0x000906
 }
 
 // ---- StormtrooperMk2 (docs/analysis/object_gaps.md 21.4): goonsneak's attack with +0x8D0 ---------------------------
+StormtrooperMk2::StormtrooperMk2(LevelData& lvl, GenericNPCDef& d, const NiPoint3& pos, const ni::NiMatrix3& rot)
+    : Stormtrooper(lvl, d, pos, rot) {                // orig: 0x0008FEF0
+    // HEAP-MIRROR: the grenade target +0x8D0 is heap garbage in the original (the ctor does not write it, and the
+    // death animation's "morph:firew" shot of a Mk2 that never attacked throws at it); 0 here (won't do: KNOWN_ISSUES
+    // "Heap layout")
+}
+
 void StormtrooperMk2::UpdateAnimation(f32 dt) {       // orig: vf5C 0x00090150
     if (model) GenericNpc::UpdateAnimation(dt);       // +0x564 ? JMP 0x00048190 : RET 4
 }

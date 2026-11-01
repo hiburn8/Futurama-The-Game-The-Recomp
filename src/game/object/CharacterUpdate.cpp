@@ -1550,7 +1550,38 @@ void Character::PrepareRender() {                     // orig: 0x00039890
     // orig: 0x000398CB: a non-player whose node was not drawn last frame (+0xB2 != 0) skips the subtree update below
     const bool culled = !def->IsType(2) && node->framesNotDrawn != 0;   // D vf0C(2); byte node+0xB2
     if (lodStep >= 1.0f) {                         // FCOMP [0x00293A98]; TEST AH,1; JNE (< / NaN: the else)
-        // NOT PORTED: the NPC death fade (alpha 1 - deathFade).
+        // orig: 0x00039900: the NPC death fade: the node drawn additively (ONE / ONE) with its own light dimmed to
+        // 1 - deathFade (black adds nothing) and its outlines thinned alike
+        if (!def->IsType(2) && type != 0xE && type != 0xB && type != 0xC && deathFade > 0.0f) {   // TEST AH,0x41
+            ni::NiPointer<ni::NiAlphaProperty> alpha;   // GetProperty(0) 0x00101DA0, DynamicCast 0x002F91F0
+            if (ni::NiProperty* pr = GetProperty(*node, 0)) alpha = dynamic_cast<ni::NiAlphaProperty*>(pr);
+            if (!alpha) {
+                alpha = new ni::NiAlphaProperty;      // new(0x1C) 0x00013D80
+                node->properties.insert(node->properties.begin(), ni::NiPointer<ni::NiProperty>(alpha.Get()));   // 0x00013C40
+                node->UpdateProperties();             // 0x00101EA0
+            }
+            alpha->flags |= 1;                        // OR byte +0x14, 1 (blending on)
+            alpha->flags = static_cast<u16>(alpha->flags & 0xFFE1u);   // AND byte +0x14, 0xE1 (source factor 0)
+            alpha->flags = static_cast<u16>(alpha->flags & 0xFE1Fu);   // AND word +0x14, 0xFE1F (destination factor 0)
+            alpha->flags |= 0x2000;                   // OR byte +0x15, 0x20
+            const f32 x = F(1.0 - double(deathFade));  // FLD [0x00293A98]; FSUB +0x660; FSTP
+            if (ni::NiAmbientLight* light = ambientLight.Get()) {   // +0x30 (no null test in the original)
+                if (light->dimmer > x) {              // FCOMP; TEST AH,0x41; JNE
+                    if (light->dimmer > 0.0f) {       // TEST AH,0x41; JNE
+                        light->dimmer = x;
+                        ++light->revision;            // +0xCC
+                    }
+                    if (light->dimmer < 0.0f) {       // TEST AH,5; JP
+                        light->dimmer = 0.0f;
+                        ++light->revision;
+                    }
+                }
+            }
+            if (!(fadeWidth == x)) {                  // FCOMP +0x6C; TEST AH,0x44; JNP
+                fadeWidth = x;
+                ni::SetOutlineWidth(node.Get(), x);   // 0x0013C9A0(node, x)
+            }
+        }
         if (physic && rootKeep) physic->SetActive(true);
         const bool active = physic && physic->IsActive();
         if (active) physic->byte6C = 1;

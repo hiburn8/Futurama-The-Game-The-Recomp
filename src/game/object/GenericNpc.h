@@ -577,13 +577,16 @@ class StormtrooperMk2 : public Stormtrooper {
 public:
     // orig: 0x0008FE70 (0x000466A0, then the Stormtrooper dtor 0x00090410)
     ~StormtrooperMk2() override { GenericNpc::UnloadModel(); }
-    using Stormtrooper::Stormtrooper;
+    // orig: 0x0008FEF0 (new(0x8E0); the Stormtrooper ctor 0x00090580, then the vtables)
+    StormtrooperMk2(LevelData& level, GenericNPCDef& def, const ni::NiPoint3& pos, const ni::NiMatrix3& rot);
     void UpdateAnimation(f32 dt) override;            // orig: vf5C 0x00090150
     void OnTextKey(f32 keyTime, const char* text) override;    // orig: vfE8 0x00090010
     void StartAttack(u32 kind, const ni::NiPoint3& pos, const ni::NiMatrix3& rot) override;   // orig: vfFC 0x0008FF50
     // orig: vf104 0x00090170
     void Shoot(u32 kind, const ni::NiPoint3& pos, const ni::NiMatrix3& rot, bool silent, f32 t0) override;
-    ni::NiPoint3 target;                              // orig: +0x8D0 (StartAttack: the player's vf78)
+    // orig: +0x8D0 (StartAttack: the player's vf78; not written by the ctor, so the death grenade of a Mk2 that never
+    // attacked (the death animation's "morph:firew" -> vf104) reads heap garbage in the original; 0 here, L)
+    ni::NiPoint3 target;
 };
 
 // orig: 0x00090FF0 (0x8D0 bytes, vtbl 0x002A04F0): "toxicwarrior" labels with ":4" (section T), with its own

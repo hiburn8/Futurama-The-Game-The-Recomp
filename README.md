@@ -23,49 +23,6 @@ chip has its own little DSP programs (the effects in `dsstdfx.bin` on the disc, 
 There's no game data in here. You need your own NTSC-U Xbox copy of Futurama, either as a disc image (`.iso`) or the
 extracted files. All the models, textures, sounds, movies and scripts get loaded from that when you play.
 
-## How I made it
-
-This took about two weeks (12-25 October 2026), with Claude Opus 5.5 on high reasoning effort doing most of the heavy
-lifting. Every function was rewritten by reading and understanding the original machine code, then tested against
-the real thing.
-
-A few things that made it work:
-
-- I used both the Xbox and PS2 versions. The Xbox version is the one I ported and tested against. The PS2 version
-  still had its class and function names left in, so it was basically a map of the code.
-- The original game runs in an emulator I put together on top of [Unicorn](https://www.unicorn-engine.org/), and the
-  port gets compared against it frame by frame: player and camera, enemies, every script call, the random numbers,
-  physics, graphics calls, sound and movies. If a single bit is off, the test fails.
-- Lots of playtesting. First a bot that finds its own way around each level. Then me playing, with my inputs recorded
-  and replayed on the original. And finally a lockstep mode, where the original runs right alongside the port while I
-  play and every frame gets checked live.
-
-## How close is it?
-
-Really close. Every game function the tests reach (701 of them) matches the original. That's backed by almost 4,000
-object tests, 60 level tests, 38 rendering tests, the menus, sound, movies and full playthroughs. One run goes from
-the start of level 1-1 to the end and on into level 1-2, and all 3.7 million things it compares match.
-
-What I can't fully promise yet:
-
-- I haven't compared the final picture and sound with a real Xbox. The port sends exactly the same graphics and sound
-  commands, but how they come out on actual hardware hasn't been checked.
-- In a few spots the original reads memory it never set up, so what it does there depends on whatever ran before. The
-  port uses fixed values instead (see [Bug fixes](#bug-fixes)), so very rarely something can happen a little
-  differently, like a respawned enemy taking a different route.
-- The emulator I tested against does a few maths instructions (sine, cosine and a couple of others) slightly
-  differently from a real Xbox, so those could be off in the very last bit.
-- Code that nothing ever reaches, like old debug features, is ported but untested.
-
-## Building
-
-You need Windows, Visual Studio 2022 with the "Desktop development with C++" workload, and CMake 3.25 or newer.
-
-```
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release
-```
-
 ## Playing
 
 The easy way: grab the zip from the [Releases](../../releases) page, unzip it anywhere and double-click
@@ -94,57 +51,102 @@ An Xbox controller just works. No controller? The keyboard does it too:
 | Z / Shift | left / right trigger |
 | Enter / Esc | Start / Back |
 
+## Building
+
+You need Windows, Visual Studio 2022 with the "Desktop development with C++" workload, and CMake 3.25 or newer.
+
+```
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release
+```
+
 Have fun!
 
-## Bug fixes
+## How I made it
 
-The aim is 1:1, so the original's bugs stay in, even the ones you can see. There are just two kinds I did fix. In
-both, the original's behaviour depends on luck, and fixing them doesn't change how the game plays.
+This took about two weeks (12-25 October 2026), with Claude Opus 5.5 on high reasoning effort doing most of the heavy
+lifting. Every function was rewritten by reading and understanding the original machine code, then tested against
+the real thing.
 
-### Memory the original never sets up
+A few things that made it work:
 
-In a few places the original reads a value it never set, so it gets whatever an earlier object left in that memory.
-What happens then depends on everything that ran before. The port starts these at zero, or at the default the code
-clearly expects. The tests still feed the original's leftover values into the port, so the code around them is
-still checked against the original bit for bit. These are all the ones I've found:
+- I used both the Xbox and PS2 versions. The Xbox version is the one I ported and tested against. The PS2 version
+  still had its class and function names left in, so it was basically a map of the code.
+- The original game runs in an emulator I put together on top of [Unicorn](https://www.unicorn-engine.org/), and the
+  port gets compared against it frame by frame: player and camera, enemies, every script call, the random numbers,
+  physics, graphics calls, sound and movies. If a single bit is off, the test fails.
+- Lots of playtesting. First a bot that finds its own way around each level. Then me playing, with my inputs recorded
+  and replayed on the original. And finally a lockstep mode, where the original runs right alongside the port while I
+  play and every frame gets checked live.
 
-- **Enemy route planning.** An enemy's route planner remembers the last trip it planned, but a new enemy never clears
-  that note. If a respawned enemy lands in a dead one's memory and wants the same trip, the original thinks it already
-  has a route, skips planning, and walks straight at its target for a moment. In the port it always plans the route.
-- **Characters' "on the ground" flags.** A new character's body starts with leftover ground and contact flags. In the
-  original that made a few enemies (the level 2-5 tank, a level 3-5 shooter, the level 5-1 Destructor) count as
-  standing on their first frame, so they started falling a frame late.
-- **The player's reset.** Resetting the player reads a field nothing ever sets. If there's leftover data in it, the
-  original treats it as an object and moves the player's model around. The port reads zero and skips that.
-- **The lock-on marker.** In third person its transparency is worked out from a leftover number. In the runs I
-  checked, it came out very close to half anyway. In the port it's exactly half.
-- **The high priest** (level 3-6). His summon timer and last warp spot start out as leftovers. The port starts both at
-  zero.
-- **Sound handles.** A few enemies and the level 4-1 rat ride check sound handles they never set. The port starts them
-  empty.
-- **Settings a config file leaves out.** Some object and character settings get copied from leftover memory when the
-  file doesn't give them. The port uses zero or the default. None of the game's own files rely on them.
-- **Objects' "frames since last drawn" counters.** These start out as leftovers too. The port starts them at zero.
+## How close is it?
 
-### Crashes and freezes
+Really close. Every game function the tests reach (701 of them) matches the original. That's backed by almost 4,000
+object tests, 60 level tests, 38 rendering tests, the menus, sound, movies and full playthroughs. One run goes from
+the start of level 1-1 to the end and on into level 1-2, and all 3.7 million things it compares match.
 
-The original skips some safety checks. It reads through empty pointers, divides by zero, writes to memory that's
-already been freed, and trusts sizes read from files. As far as all my testing shows, the game's own data and normal
-play never trigger any of these. But if one ever did, the Xbox would crash. The port checks instead and carries on:
+These are the levels I've played through myself with every frame compared against the original code in a CPU
+emulator. In several places the original reads memory it never set up, which leads to undefined behaviour. I don't
+emulate the memory layout, so it's not possible to replicate the exact undefined-ness here. Instead I either fix the
+bugs or hard-code reasonable start values (see [Original bug fixes](#original-bug-fixes)). During the frame-matched
+comparisons, I take the memory values from the emulated CPU and hand them to a dev version of the port, so they can
+stay in perfect step. Some frames only differed in the internal ID numbers the level scripts give objects. Those don't
+change anything you see or play, so I count them as matching.
 
-- a script that divides by zero gets 0;
-- an enemy with no dying animation just skips it;
-- a missing effect doesn't get spawned;
-- damaged or oversized files get rejected instead of overflowing.
+| Level | Name | Frames | Result |
+|---|---|---|---|
+| 1-1 | Planet Express | 9,369 (~2.5 min) | Matches |
+| 1-2 | Sewers | 75,143 (~21 min) | Matches |
+| 1-3 | Subway | 27,999 (~8 min) | Matches |
+| 1-4 | Old New York | 82,111 (~23 min) | Matches |
+| 1-5 | Red Light District | 25,691 (~7 min) | Matches |
+| 1-6 | New New York | 45,736 (~13 min) | Matches |
+| 1-7 | Uptown | 25,539 (~7 min) | Matches |
+| 2-1 | Canyon | 20,291 (~5.5 min) | Matches |
+| 2-2 | Mine | | Untested |
+| 2-3 | Junkyard 1 | 30,415 (~8.5 min) | Matches |
+| 2-4 | Junkyard 2 | | Untested |
+| 2-5 | Junkyard 3 | | Untested |
+| 2-6 | Mine Tunnel | | Untested |
+| 3-1 | Courtyard I | | Untested |
+| 3-2 | Left Wing | 39,531 (~11 min) | Matches |
+| 3-3 | Right Wing | | Untested |
+| 3-4 | Inner Temple | | Untested |
+| 3-5 | Courtyard II | | Untested |
+| 3-6 | Courtyard III | | Untested |
+| 4-1 | Bogad Swamp | | Untested |
+| 5-1 | Mom's HQ – Bender | | Untested |
+| 5-2 | Mom's HQ – Leela | | Untested |
+| 5-3 | Mom's HQ – Fry | | Untested |
 
-Running out of memory shows an error instead of freezing the game.
+What I can't fully promise yet:
 
-### Bugs I kept
+- I haven't compared the final picture and sound with a real Xbox. The port sends exactly the same graphics and sound
+  commands, but how they come out on actual hardware hasn't been checked.
+- The emulator I tested against does a few maths instructions (sine, cosine and a couple of others) slightly
+  differently from a real Xbox, so those could be off in the very last bit.
+- Code that nothing ever reaches, like old debug features, is ported but untested.
 
-Anything that changes what you see or how the game plays stays exactly as it was. For example:
+## Original bug fixes
 
-- Spawning a regular toxic warrior writes into the settings it shares with its other versions, so they can end up with
-  its shotgun.
-- The hit test for health triggers ignores the box's rotation and only checks five of its six sides.
-- The rat ride's steering is never reset, so a second ride starts with the last one's steering.
-- Setting a waypoint's rotation from a script stores a cosine where the angle should go.
+The aim is 1:1, so any bug that changes what you see or how the game plays stays in. The only ones I fixed are where
+the original's result comes down to luck (memory it never sets up) or would crash the Xbox.
+
+| Bug | Status |
+|---|---|
+| Dead enemies always fade away one second after dying, so longer death animations get cut off (most weasels) | Left original |
+| Spawning one kind of toxic warrior can hand the other kinds its shotgun | Left original |
+| Shots at some breakable objects ignore the object's rotation and can't hit one of its six sides | Left original |
+| The rat ride's steering is never reset, so riding it a second time starts with the old steering | Left original |
+| A script that turns a path point saves the wrong number as its angle | Left original |
+| A respawned enemy can skip planning its path and walk straight at you for a moment | Fixed |
+| A grenade trooper killed before it ever attacks throws its dying grenade in an unpredictable direction | Fixed |
+| A respawned weasel can copy the death animation of the weasel it replaced | Fixed |
+| A few enemies (the 2-5 tank, a 3-5 shooter, the 5-1 Destructor) start falling one frame late | Fixed |
+| Resetting the player can shift the player's model out of place | Fixed |
+| The lock-on marker's see-through level is random instead of half | Fixed |
+| The high priest (3-6) starts with a random summon timer and warp spot | Fixed |
+| A few enemies and the 4-1 rat ride can act on a sound that was never started | Fixed |
+| Settings missing from a config file get random values (the game's own files never miss any) | Fixed |
+| Objects start with a random count of how many frames since they were last drawn | Fixed |
+| Crashes only bad data could cause (missing objects, dividing by zero, broken files, running out of memory) | Fixed |

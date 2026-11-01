@@ -236,6 +236,8 @@ Character::Character(LevelData& lvl, CharacterDef& d) : GameObject(lvl, d), cdef
     std::snprintf(buf, sizeof buf, "character::%s", d.name.c_str());   // orig: sprintf
     node = new ni::NiNode;                            // (replaces the GameObject's node)
     // HEAP-MIRROR: +0xB2 is heap garbage in the original; 0 here (won't do: KNOWN_ISSUES "Heap layout")
+    // HEAP-MIRROR: the death kind +0x778 is heap garbage in the original (no ctor writes it; a weasel dies with the
+    // animation of its block's former occupant's kind); 0 here (won't do: KNOWN_ISSUES "Heap layout")
     node->name = buf;
     health = health4F8 = maxHealth = d.maxHealth;     // orig: +0x4F4 / +0x4F8 / +0x4FC = D+0x60
     heightOffset = d.boundCenter;                     // orig: +0x4D0 = D+0x9C

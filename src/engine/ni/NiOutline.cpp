@@ -698,4 +698,14 @@ void ShutdownOutlines() {                             // orig: 0x0013D020
     g_classify.clear();
 }
 
+void SetOutlineWidth(NiAVObject* object, f32 width) {   // orig: 0x0013C9A0
+    auto* node = dynamic_cast<NiNode*>(object);       // IsKindOf 0x002F9230 (null: nothing)
+    if (!node) return;
+    if (auto* outline = dynamic_cast<NiOutline*>(node)) {   // DynamicCast 0x0030456C
+        outline->width = width;                       // +0xE4
+        return;
+    }
+    for (const auto& c : node->Children()) SetOutlineWidth(c.Get(), width);   // +0xCC slots (null ones too)
+}
+
 }  // namespace fut::ni

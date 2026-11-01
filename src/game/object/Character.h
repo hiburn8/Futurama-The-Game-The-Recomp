@@ -270,7 +270,8 @@ public:
 
     // ---- per-step state (orig offsets; initial values from the constructor 0x0003D220) ----
     f32 updateDistance = 250.0f;                      // orig: +0x64
-    f32 lodStep = 1.0f;                               // orig: +0x70 (steps since the last render, LOD weighted)
+    f32 fadeWidth = 0;                                // orig: +0x6C (the death fade's last outline width)
+    f32 lodStep = 1.0f;                              // orig: +0x70 (steps since the last render, LOD weighted)
     f32 animTime = 0;                                 // orig: +0x78 (character time t)
     f32 renderTime = 0;                               // orig: +0x7C
     f32 animStart = 0;                                // orig: +0x80 (t of the current sequence's start)
