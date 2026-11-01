@@ -68,7 +68,9 @@ public:
     D3DMATERIAL8 material{};
     bool materialSet = false;
     std::map<u32, D3DLIGHT8> lights;                  // SetLight by index
-    std::map<u32, bool> lightEnabled;                 // LightEnable by index
+    // The enabled lights, the last enabled first (D3D's list: device +0x394, link light +0x8C). The draw's lazy flush
+    // (0x0023E015) programs the first eight into the GPU's light slots 0..7 and ignores the rest.
+    std::vector<u32> activeLights;
     f32 screenSpaceOffset[2] = {};
 
     Resource* backBuffer() const { return frameBuffers_[0]; }

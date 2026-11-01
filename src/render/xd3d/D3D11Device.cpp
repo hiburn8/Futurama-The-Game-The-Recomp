@@ -978,11 +978,9 @@ void D3D11Device::Draw(u32 primitive, const u16* list, u32 count, u32 start) {
         }
     }
     u32 nl = 0;
-    for (const auto& [index, on] : lightEnabled) {
-        if (!on || nl >= 8) continue;
-        auto it = lights.find(index);
-        if (it == lights.end()) continue;
-        const D3DLIGHT8& l = it->second;
+    for (u32 index : activeLights) {                  // orig: the lazy flush 0x0023E015: the list's first eight in
+        if (nl == 8) break;                           //  slots 0..7 (0x41024 + 0x80 per slot), the rest ignored
+        const D3DLIGHT8& l = lights.at(index);        // (LightEnable sets a never-set light's default)
         LightCB& o = cb.lights[nl++];
         std::memcpy(o.diffuse, l.diffuse, 16), std::memcpy(o.specular, l.specular, 16);
         std::memcpy(o.ambient, l.ambient, 16);
@@ -995,7 +993,6 @@ void D3D11Device::Draw(u32 primitive, const u16* list, u32 count, u32 start) {
         o.att[0] = l.attenuation0, o.att[1] = l.attenuation1, o.att[2] = l.attenuation2, o.att[3] = l.falloff;
         o.spot[0] = std::cos(l.theta * 0.5f), o.spot[1] = std::cos(l.phi * 0.5f);
     }
-    if (lightEnabled.size() > 8 && nl == 8) NotPorted("D3D11Device: more than eight enabled lights");
     cb.lightCount[0] = s32(nl);
     D3D11_MAPPED_SUBRESOURCE m;
     if (SUCCEEDED(d.ctx->Map(d.drawCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {

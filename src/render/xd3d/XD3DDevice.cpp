@@ -170,7 +170,17 @@ void XD3DDevice::SetMaterial(const D3DMATERIAL8& m) {
     materialSet = true;
 }
 void XD3DDevice::SetLight(u32 index, const D3DLIGHT8& l) { lights[index] = l; }
-void XD3DDevice::LightEnable(u32 index, bool enable) { lightEnabled[index] = enable; }
+void XD3DDevice::LightEnable(u32 index, bool enable) {   // orig: 0x00234F00
+    if (!lights.count(index)) {                       // never set: D3D's default light first (0x00234F2A)
+        D3DLIGHT8 d{};
+        d.type = 3;                                   // directional, white, down +z
+        d.diffuse[0] = d.diffuse[1] = d.diffuse[2] = 1.0f;
+        d.direction[2] = 1.0f;
+        lights[index] = d;
+    }
+    activeLights.erase(std::remove(activeLights.begin(), activeLights.end(), index), activeLights.end());   // unlinked
+    if (enable) activeLights.insert(activeLights.begin(), index);   // linked at the head
+}
 
 void XD3DDevice::SetTexture(u32 stage, Resource* texture) {
     if (stage < kNumStages) textures[stage] = texture;

@@ -110,9 +110,9 @@ change anything you see or play, so I count them as matching.
 | 2-5 | Rumble in the Junkyard | 14,752 (~4 min) | Matches |
 | 3-1 | Market Square | 20,383 (~5.5 min) | Matches |
 | 3-2 | Left Wing | 38,276 (~10.5 min) | Matches |
-| 3-3 | Right Wing | | Untested |
-| 3-6 | Temple Courtyard | | Untested |
-| 3-4 | Inner Temple | | Untested |
+| 3-3 | Right Wing | 53,185 (~15 min) | Matches |
+| 3-6 | Temple Courtyard | 28,896 (~8 min) | Matches |
+| 3-4 | Inner Temple | 53,104 (~15 min) | Matches |
 | 4-1 | Bogad Swamp Trail | | Untested |
 | 5-1 | Bender's Breakout | | Untested |
 | 5-2 | Leela's Last Laugh | | Untested |
