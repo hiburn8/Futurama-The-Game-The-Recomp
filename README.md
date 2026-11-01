@@ -103,7 +103,7 @@ change anything you see or play, so I count them as matching.
 | 1-7 | Uptown | 25,539 (~7 min) | Matches |
 | 1-6 | New New York | 45,736 (~13 min) | Matches |
 | 2-1 | Canyon | 43,898 (~12 min) | Matches |
-| 2-6 | Mine Tunnel | | Untested |
+| 2-6 | Mine Tunnel | 7,117 (~2 min) | Matches |
 | 2-2 | Mine | 25,288 (~7 min) | Matches |
 | 2-3 | Junkyard 1 | 30,415 (~8.5 min) | Matches |
 | 2-4 | Junkyard 2 | | Untested |
