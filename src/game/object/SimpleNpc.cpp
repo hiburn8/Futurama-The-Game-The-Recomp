@@ -52,9 +52,10 @@ SimpleNpc::SimpleNpc(LevelData& lvl, SimpleNPCDef& d, const NiPoint3& pos, const
     : Character(lvl, d) {                             // orig: 0x0005F860
     lvl.wasps.push_back(this);                        // S+0xA0, tail append (+0x7F4 next, +0x7F8 prev)
     // new(0x48) CharBody(D+0x90, D+0x94, D+0x98, 10.0) 0x000AF0D0. (H) its +0x45 and its shape's +0x9C are never
-    // written (heap garbage, KNOWN_ISSUES #41; the play oracle does not record the wasp's: 0 here).
+    // written (heap garbage, KNOWN_ISSUES #41).
     body = std::make_unique<phys::CharBody>(d.boundWidth, d.boundHeight, d.boundDepth,
                                             lvl.physic ? &lvl.physic->world : nullptr);
+    // HEAP-MIRROR: the port's defaults here (won't do: KNOWN_ISSUES "Heap layout")
     body->shape.b1 = flag60;                          // shape+0xB1 = byte +0x60 (body +0x1A untouched)
     body->owner = this;                               // vf28
     Character::SetPosition(pos);                      // 0x000353B0

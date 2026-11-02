@@ -113,9 +113,9 @@ change anything you see or play, so I count them as matching.
 | 3-3 | Right Wing | 53,185 (~15 min) | Matches |
 | 3-6 | Temple Courtyard | 28,896 (~8 min) | Matches |
 | 3-4 | Inner Temple | 53,104 (~15 min) | Matches |
-| 4-1 | Bogad Swamp Trail | | Untested |
-| 5-1 | Bender's Breakout | | Untested |
-| 5-2 | Leela's Last Laugh | | Untested |
+| 4-1 | Bogad Swamp Trail | 15,855 (~4.5 min) | Matches |
+| 5-1 | Bender's Breakout | 33,217 (~9 min) | Matches |
+| 5-2 | Leela's Last Laugh | 46,522 (~13 min) | Matches |
 | 5-3 | Fry Fights Back | | Untested |
 | 3-5 | Courtyard II (removed) | | Untested |
 
