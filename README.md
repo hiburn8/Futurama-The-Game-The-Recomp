@@ -116,7 +116,7 @@ change anything you see or play, so I count them as matching.
 | 4-1 | Bogad Swamp Trail | 15,855 (~4.5 min) | Matches |
 | 5-1 | Bender's Breakout | 33,217 (~9 min) | Matches |
 | 5-2 | Leela's Last Laugh | 46,522 (~13 min) | Matches |
-| 5-3 | Fry Fights Back | | Untested |
+| 5-3 | Fry Fights Back | 37,798 (~10.5 min) | Matches |
 | 3-5 | Courtyard II (removed) | | Untested |
 
 What I can't fully promise yet:
