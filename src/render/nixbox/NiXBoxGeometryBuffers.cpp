@@ -443,9 +443,8 @@ xd3d::Resource* CreateIndexBuffer(xd3d::XD3DDevice& d3d, const u16* indices, u32
     if (!indices) return nullptr;
     const u32 bytes = count * 2;
     xd3d::Resource* ib = nullptr;
-    if (old) {                                        // 0x0023A5C0 GetDesc: format 0x65, type 7
-        NotPorted("CreateIndexBuffer: the old index buffer's D3DIndexBuffer_GetDesc (not recorded)");
-        if (bytes <= size) ib = old;
+    if (old) {                                        // 0x0023A5C0 GetDesc: format 0x65, type 7 (a query only: the
+        if (bytes <= size) ib = old;                  //  render trace does not record it)
     }
     if (!ib) {
         ib = d3d.CreateIndexBuffer2(bytes);

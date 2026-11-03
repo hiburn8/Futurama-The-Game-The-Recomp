@@ -74,6 +74,25 @@ bool PowerOfTwo(u32 v) { return v && !(v & (v - 1)); }   // (0x0015E120: the low
 
 }  // namespace
 
+void NiXBoxTextureManager::CreateDefaultPixelData() {   // orig: 0x0014ABE0
+    auto* p = new ni::NiPixelData;                    // new(0x4C) 0x001112F0(8, 8, renderer +0x598, 1)
+    p->mips.resize(1);
+    p->mips[0].width = 8, p->mips[0].height = 8;
+    // (the renderer's 32-bit format, as the clipper's: A8R8G8B8)
+    p->format.format = 1, p->format.bitsPerPixel = 32, p->bytesPerPixel = 4;
+    p->format.channelMasks[0] = 0x00FF0000u, p->format.channelMasks[1] = 0x0000FF00u;
+    p->format.channelMasks[2] = 0x000000FFu, p->format.channelMasks[3] = 0xFF000000u;
+    p->pixels.assign(8 * 8 * 4, 0);                   // REP STOSD 0x40 dwords of 0
+    auto put = [p](u32 offset, u32 v) {               // (dwords at byte offsets of level 0, little-endian)
+        for (u32 b = 0; b < 4; ++b) p->pixels[offset + b] = u8(v >> (8 * b));
+    };
+    for (u32 o : {0x60u, 0x80u, 0x84u, 0x88u, 0xA0u, 0xA8u, 0xC0u, 0xC8u}) put(o, 0xFFFF0000u);   // red
+    for (u32 o : {0x34u, 0x54u, 0x74u, 0x8Cu, 0x90u, 0x94u, 0xACu, 0xB4u, 0xCCu, 0xD0u, 0xD4u})
+        put(o, 0xFF0000FFu);                                                                      // blue
+    for (u32 o : {0x38u, 0x58u, 0x78u, 0x98u, 0xB8u, 0xD8u}) put(o, 0xFFFFFF00u);                   // yellow
+    defaultPixels = p;
+}
+
 bool NiXBoxTextureManager::Precache(ni::NiSourceTexture& texture) {   // orig: 0x001473E0 / 0x0015E0A0
     if (textures_.count(&texture)) return true;       // +0x20: the texture has renderer data
     if (texture.external) {                           // +0x30: the image converter's vf08 reads the file
@@ -81,12 +100,14 @@ bool NiXBoxTextureManager::Precache(ni::NiSourceTexture& texture) {   // orig: 0
         return true;
     }
     const ni::NiPixelData* pix = texture.pixelDataObj.Get();   // +0x34
-    const s32 fmt = pix ? D3DFormatOf(pix->format) : -1;
+    s32 fmt = pix ? D3DFormatOf(pix->format) : -1;
     if (!pix || pix->mips.empty() || !PowerOfTwo(pix->mips[0].width) || !PowerOfTwo(pix->mips[0].height) ||
         fmt < 0) {
-        // (0x00157360 without a match, or no pixel data: the renderer's default pixel data +0x5A0 / format +0x598)
-        NotPorted("NiXBoxTextureManager::Precache: the renderer's default pixel data (+0x5A0 / +0x598)");
-        return true;
+        // 0x0015E170: 0x00157360 without a match, or no pixel data: the renderer's default pixel data +0x5A0 and
+        // its format +0x598
+        if (!defaultPixels) CreateDefaultPixelData(); // (made by the factory before any texture)
+        pix = defaultPixels.Get();
+        fmt = D3DFormatOf(pix->format);
     }
     if (pix->palette != ni::kNullLink) NotPorted("NiXBoxTextureManager::Precache: the palette 0x0015DFF0");
     // (+0x54 the mipmap flag: the preferences' mipmap 1, or 2 with DAT_0030F024 (0); the converter's vf10 0x00151540

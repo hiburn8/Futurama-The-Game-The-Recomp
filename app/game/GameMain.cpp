@@ -70,13 +70,14 @@ std::filesystem::path SaveFolder() {
 }
 
 // The launcher's test of a disc it found (main's own checks below, without loading the image): opens, has a
-// default.xbe, and that is the NTSC-U build.
+// default.xbe, and that is the NTSC-U or the PAL build.
 bool CheckDisc(const std::string& source, std::string& error) {
     fs::Vfs vfs;
     if (!vfs.Open(source, error)) return false;
     std::vector<u8> data;
     if (!vfs.ReadFile("default.xbe", data)) {
-        error = "default.xbe not found (the port needs the Futurama (Xbox, NTSC-U) disc image or its extracted folder)";
+        error = "default.xbe not found (the port needs a Futurama (Xbox, NTSC-U or PAL) disc image or its extracted "
+                "folder)";
         return false;
     }
     xbe::XbeImage probe;
@@ -111,11 +112,11 @@ int main(int argc, char** argv) {
     std::string error;
     fs::Vfs vfs;
     if (!vfs.Open(source, error)) return fail(source + ": " + error, 1);
-    {   // the original's data tables (core/XbeImage.h): the user's default.xbe, NTSC-U only
+    {   // the original's data tables (core/XbeImage.h): the user's default.xbe, NTSC-U or PAL
         std::vector<u8> data;
         if (!vfs.ReadFile("default.xbe", data))
-            return fail(source + ": default.xbe not found (the port needs the Futurama (Xbox, NTSC-U) disc image or "
-                                 "its extracted folder)", 1);
+            return fail(source + ": default.xbe not found (the port needs a Futurama (Xbox, NTSC-U or PAL) disc image "
+                                 "or its extracted folder)", 1);
         if (!xbe::LoadGameImage(std::move(data), &error)) return fail(source + ": " + error, 1);
     }
     const std::vector<u8>& xbeFile = xbe::GameImage().Bytes();
@@ -170,6 +171,8 @@ int main(int argc, char** argv) {
     sv.renderer = &renderer;
     sv.saves = &saves;
     sv.qpf = static_cast<u64>(freq.QuadPart);
+    sv.pal = vfs.IsPal();                             // (the disc's archives: sysPAL.img / FutPAL##.img)
+    // (XGetLanguage: unset = English, the default; the PAL game's language choice comes later)
     text::CreateAppFont(sv.readFile);                 // App::Init's error overlay: font 0 (tex2)
     game::app::App app(sv);
     QueryPerformanceCounter(&now);

@@ -46,6 +46,11 @@ public:
     void Replace(const ni::NiTexture& texture, xd3d::Resource* d3d);
     // The rendered textures' D3D textures (the renderer's +0x80 data): registered by CreateRenderedTextureData.
     std::map<const ni::NiObject*, xd3d::Resource*> rendered;
+    // orig: 0x0014ABE0 (from the factory 0x0014C1C8): the renderer's default pixel data +0x5A0, an 8x8 one-level
+    // NiPixelData (0x001112F0) of its 32-bit format +0x598 with a small red / blue / yellow pattern; Precache uses it
+    // for a texture without usable pixel data.
+    void CreateDefaultPixelData();
+    ni::NiPointer<ni::NiPixelData> defaultPixels;     // (renderer +0x5A0)
 
 private:
     xd3d::XD3DDevice& d3d_;

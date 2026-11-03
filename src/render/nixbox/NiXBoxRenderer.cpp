@@ -49,7 +49,8 @@ NiXBoxRenderer::NiXBoxRenderer(XD3DDevice& device) : d3d_(device) {
     // 0x0015FB20 the texture manager (+0x5BC: minimal), 0x00159CB0 the render state (+0x5C0, with its defaults
     // 0x001594A0), 0x0015BD40 the light manager (+0x5C4), then the group manager and the renderer's own group
     textures_ = std::make_unique<NiXBoxTextureManager>(d3d_);
-    state_ = std::make_unique<NiXBoxRenderState>(d3d_);
+    textures_->CreateDefaultPixelData();              // the factory's 0x0014ABE0 (0x0014C1C8)
+    state_ =std::make_unique<NiXBoxRenderState>(d3d_);
     lights_ = std::make_unique<NiXBoxLightManager>(d3d_, *state_);
     unshared_ = static_cast<NiXBoxGeometryGroup*>(CreateGeometryGroup(1));
     // the factory 0x0014C200 then: 0x0015B690 the texture pipeline manager (+0x5C8)

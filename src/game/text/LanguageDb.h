@@ -75,6 +75,9 @@ public:
     // orig: 0x000D9BB0. Reloads every database in the new language.
     void SetLanguage(const std::string& language);
     const std::string& Language() const { return language_; }   // orig: +0x18 (default "English")
+    // orig: 0x000D9DF0 (static, of TextManager::Get): sprintf(the static buffer DAT_002EC7D8, format, +0x18), the
+    // game's one source of language-dependent paths ("images\%s\Death.nif", "Sounds\Localized\%s\...").
+    std::string FormatLocalized(const char* format) const;
 
     // orig: 0x000D9C80. db = nullptr searches all databases in load order. Missing or empty strings return
     // u"(Not translated)".

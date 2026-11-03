@@ -8,7 +8,7 @@
 //      folder when it holds default.xbe;
 //   4. a file-open dialog (an .iso, or the default.xbe inside an extracted folder), asked again while the pick fails
 //      the check; a good pick is remembered (1).
-// A candidate that fails the check (an image that is not the NTSC-U disc, ...) is reported in a message box and the
+// A candidate that fails the check (an image that is not the NTSC-U or PAL disc, ...) is reported in a message box and the
 // search goes on; a remembered one that fails is skipped quietly.
 #pragma once
 

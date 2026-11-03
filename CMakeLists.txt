@@ -69,6 +69,7 @@ add_library(fut_core STATIC
     src/game/app/Breakdown.cpp
     src/game/app/CheatCodes.cpp
     src/game/app/Contexts.cpp
+    src/game/app/LanguageSelect.cpp
     src/game/app/ErrorOverlay.cpp
     src/game/app/Extras.cpp
     src/game/app/Frontend.cpp

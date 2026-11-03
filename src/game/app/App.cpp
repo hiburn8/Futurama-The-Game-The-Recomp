@@ -13,6 +13,7 @@
 #include "game/app/ErrorOverlay.h"
 #include "game/app/Extras.h"
 #include "game/app/Frontend.h"
+#include "game/app/LanguageSelect.h"
 #include "game/app/MemoryCards.h"
 #include "game/app/PauseMenu.h"
 #include "game/defs/IngameEvent.h"
@@ -132,6 +133,12 @@ bool App::Init(const char* directLevel) {            // orig: 0x000D2730 + 0x000
     // (no renderer: Init fails in the original; the port's harnesses run without one) the clear colour black: vf6C
     if (services.renderer) services.renderer->SetBackgroundColor(ni::NiColor{0.0f, 0.0f, 0.0f});
     text = std::make_unique<text::TextManager>(services.readFile);
+    // the archives: sysPAL.img (App+0xE8 = 0, then the console's language: TextManager::SetLanguage(
+    // LanguageNameForXbox 0x000D9A20) at 0x000D2825), else sysNTSC.img (App+0xE8 = 1); FutPAL%02d.img / FutNTSC%02d.img
+    // the same way. The port's file layer mounted them (fs::Vfs: the same order).
+    ntsc = !services.pal;
+    const u32 consoleLanguage = services.consoleLanguage ? services.consoleLanguage() : 1u;   // XGetLanguage
+    if (!ntsc) text->SetLanguage(text::TextManager::LanguageNameForXbox(consoleLanguage));
     // (port) the texture / pixel data sharing are off until 0x000A2730 turns them on (DAT_002F9AA0 / DAT_002F973C are
     // 0 in the image): App::Init's own files (the error overlay's, the memory cards') share nothing. The port's
     // default is on (the harnesses without an App); the lists are empty at this point (a new process).
@@ -144,6 +151,11 @@ bool App::Init(const char* directLevel) {            // orig: 0x000D2730 + 0x000
     memoryCards->Init();                              // 0x000E5250
     // 0x000A2730: dt = 1/60 (NTSC), g_fixedFrameStep = 1, the clears / presents, the profiler, App+0xA8, App+0xAC =
     // "Level1-1", the contexts:
+    // PORT DIVERGENCE (decided 2026-11-03): the PAL disc keeps the NTSC timing. The original's PAL branch (App+0xE8
+    // != 1, 0x000A27A4) runs 50 steps a second: dt 0.02 (0x3CA3D70A), the rate DAT_002E7C0C 50.0, DAT_002E7C08
+    // 0x3D214285, DAT_002E7B00 / DAT_002D67E4 50.0, DAT_002E7AF8 / g_frameStep 0.02. The port steps at 60 on both
+    // discs (the gameplay checked against the NTSC original, no 50-on-60 judder); the movie suffix DAT_002E7C10
+    // ("NTSC" / "PAL") still follows the disc (PlayMovie).
     g_frameStep = F(1.0 / 60.0);                      // 0x3C888889
     ni::SetTextureSharing(true);                      // 0x00118930(1) (0x000A283F)
     ni::SetPixelDataSharing(true);                    // 0x001119D0(1)
@@ -159,6 +171,13 @@ bool App::Init(const char* directLevel) {            // orig: 0x000D2730 + 0x000
         if (!current_) current_ = p;                  // (the first registered becomes current)
         return p;
     };
+    // 0x000A296B: the PAL game sets the console's language again (TextManager::SetLanguage(LanguageNameForXbox)
+    // 0x000A2983; the same name: no reload)
+    if (!ntsc) text->SetLanguage(text::TextManager::LanguageNameForXbox(consoleLanguage));
+    // PORT ADDITION: the PAL disc's language screen, first (the current context), as the PS2 build makes it before
+    // the Intro on a PAL machine (0x00241498); the Xbox code has none (LanguageSelect.h)
+    if (!ntsc)
+        languageSelect = static_cast<LanguageSelectContext*>(add(std::make_unique<LanguageSelectContext>(*this)));
     intro = static_cast<IntroContext*>(add(std::make_unique<IntroContext>(*this)));         // new(0x40) 0x0002B440
     frontend = static_cast<FrontendContext*>(add(std::make_unique<FrontendContext>(*this)));   // new(0x1D0)
     attract = static_cast<AttractContext*>(add(std::make_unique<AttractContext>(*this)));   // new(0x18)
@@ -184,6 +203,13 @@ bool App::Init(const char* directLevel) {            // orig: 0x000D2730 + 0x000
     fpsStart_ = qpc;                                  // App+0xD8
     // BUILD.TXT into DAT_002E7B08 (the version text: render)
     return true;
+}
+
+std::string App::Localized(const char* format) const {   // orig: TextManager::FormatLocalized 0x000D9DF0
+    if (text) return text->FormatLocalized(format);
+    char buffer[0x100];
+    std::snprintf(buffer, sizeof buffer, format, "English");
+    return buffer;
 }
 
 void App::Shutdown() {                                // orig: 0x000D29B0

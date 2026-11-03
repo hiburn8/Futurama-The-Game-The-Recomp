@@ -280,7 +280,8 @@ bool FrontendContext::OnEnter() {                     // orig: 0x000218F0
     idleTime = 0;                                     // +0x7C
     volumeBackup = 0;                                 // +0x74
     musicSound = app_.LoadSound("Sounds/Music/01 - front-end.wav", 1);   // +0x1AC
-    speechSound = app_.LoadSound("Sounds/Localized/English/menu/6br06-01.wav", 0);   // +0x1B0 (FormatLocalized)
+    speechSound = app_.LoadSound(app_.Localized("Sounds/Localized/%s/menu/6br06-01.wav"),
+                                 0);          // +0x1B0 (FormatLocalized 0x002942C0)
     root_ = new ni::NiNode;                           // +0x48 = new(0xE0) NiNode (the scene root)
     return true;
 }

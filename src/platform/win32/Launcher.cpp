@@ -178,7 +178,8 @@ std::string FindDisc(const std::function<bool(const std::string& source, std::st
             return source;
         }
         const std::string text = "That one can't be used:\n\n" + error + "\n\nThe game needs your own Futurama (Xbox, "
-                                 "NTSC-U) disc image (.iso), or the default.xbe of the extracted disc.\n\nPick another?";
+                                 "NTSC-U or PAL) disc image (.iso), or the default.xbe of the extracted disc.\n\nPick "
+                                 "another?";
         if (MessageBoxW(nullptr, Widen(text).c_str(), L"Futurama", MB_OKCANCEL | MB_ICONWARNING | MB_SETFOREGROUND)
             != IDOK)
             return {};

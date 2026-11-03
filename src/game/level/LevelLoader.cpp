@@ -47,6 +47,11 @@ bool LoadLevel(const std::string& name, LevelLoadOptions o, LoadedLevel& out) {
     if (!o.services.soundDuration)                    // orig: Sound_GetDuration 0x000C9930
         o.services.soundDuration = [snd](u32 h) { return double(snd->Duration(h)); };
     if (!o.defContext.rand) o.defContext.rand = [] { return crt::Rand(); };   // the CRT rand 0x0016695C
+    if (!o.services.text) {
+        out.text = std::make_unique<text::TextManager>(o.readFile);
+        o.services.text = out.text.get();
+    }
+    o.defContext.text = o.services.text;              // (the one language: TextManager::Get's +0x18)
     LevelData& level = *out.level;
     level.name = name;
     out.defContext = o.defContext;
@@ -58,10 +63,6 @@ bool LoadLevel(const std::string& name, LevelLoadOptions o, LoadedLevel& out) {
     level.animations = &out.animations;
     level.defContext = &ctx;
     level.defs = out.defs.get();
-    if (!o.services.text) {
-        out.text = std::make_unique<text::TextManager>(o.readFile);
-        o.services.text = out.text.get();
-    }
     level.text = o.services.text;
     level.fileExists = o.services.fileExists ? o.services.fileExists : [read = o.readFile](const std::string& p) {
         std::vector<u8> data;

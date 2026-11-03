@@ -24,6 +24,10 @@ namespace fut::ni {
 class NiStream;
 }
 
+namespace fut::text {
+class TextManager;
+}
+
 namespace fut::game {
 
 class LevelData;
@@ -41,7 +45,9 @@ struct DefContext {
     // orig: 0x000CAFF0, the sound event registered under "<character>:<event>" (from Sounds\SoundLookup.nif).
     std::function<s32(const std::string& name)> lookupSoundEvent;
     std::function<s32()> rand;                         // orig: the CRT rand() 0x0016695C (NPC definitions)
-    std::string language = "English";                  // orig: TextManager +0x18 (localised sound paths)
+    // orig: TextManager::Get (0x000D9D80): the language +0x18 of the localised sound paths (FormatLocalized
+    // 0x000D9DF0). The App's text manager (LevelLoader sets it); null: "English".
+    const text::TextManager* text = nullptr;
     // The level being loaded (its effects data: the NPC definitions look meshes / textures up there) and its name
     // (orig: g_level +0x0C).
     const LevelData* level = nullptr;

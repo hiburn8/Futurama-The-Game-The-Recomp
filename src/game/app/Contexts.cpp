@@ -30,9 +30,7 @@ Splash::Splash(App& app, std::string p, f32 minT, f32 maxT, ni::NiCamera* cam)
     // the base 0x000EF710(path, camera, 1): the image's tiles (the language's default.nif when the path fails)
     if (app.services.renderer && cam)
         image = std::make_unique<LoadingScreen>(app.services.renderer, &app.services.readFile, path,
-                                                "images\\" + (app.text ? app.text->Language() : std::string("English")) +
-                                                    "\\default.nif",
-                                                cam);
+                                                app.Localized("images\\%s\\default.nif"), cam);   // 0x002A5820
 }
 
 bool Splash::Update(App& app, f32 dt) {               // orig: 0x000EED10
@@ -102,7 +100,8 @@ bool IntroContext::Update() {                         // orig: 0x0002B5F0
     last = now;
     switch (state) {
     case 0:                                           // the legal screen; at the 21st update the pause menu
-        (void)ShowSplash(app_.ntsc ? "images\\English\\legal-NTSC.nif" : "images\\English\\legal.nif", 6.0f, 6.0f);
+        (void)ShowSplash(app_.Localized(app_.ntsc ? "images\\%s\\legal-NTSC.nif" : "images\\%s\\legal.nif").c_str(),
+                         6.0f, 6.0f);                 // (FormatLocalized 0x0029534C / 0x00295368)
         if (++updates > 20) {                         // DAT_002DAE2C
             app_.pause = std::make_unique<PauseMenu>(app_);   // new(0x6C) 0x000A83F0 -> DAT_002E9428
             app_.pause->Build();                      // 0x000A8640
@@ -111,7 +110,8 @@ bool IntroContext::Update() {                         // orig: 0x0002B5F0
         }
         break;
     case 1:
-        if (!ShowSplash(app_.ntsc ? "images\\English\\legal-NTSC.nif" : "images\\English\\legal.nif", 6.0f, 6.0f))
+        if (!ShowSplash(app_.Localized(app_.ntsc ? "images\\%s\\legal-NTSC.nif" : "images\\%s\\legal.nif").c_str(),
+                        6.0f, 6.0f))
             state = 2;
         break;
     case 2:
@@ -123,7 +123,7 @@ bool IntroContext::Update() {                         // orig: 0x0002B5F0
     case 4:
         if (!ShowMovie("uds", 4)) state = 5;
         break;
-    case 5:
+    case 5:                                           // (the original's own literal "english": 0x002952E8 / 0x0029530C)
         if (!ShowSplash(app_.ntsc ? "images\\english\\NI_Splash_NTSC.nif" : "images\\english\\NI_Splash_PAL.nif",
                         1.5f, 5.0f))
             state = 8;
@@ -392,7 +392,8 @@ bool DeathContext::OnEnter() {                        // orig: 0x0002BEC0
 bool DeathContext::ShowSplash() {                     // orig: 0x0002C0F0
     if (!splash) {
         rendered = false;
-        splash = std::make_unique<Splash>(app_, "images\\English\\Death.nif", 2.5f, 3.0f, camera.Get());   // 0x000EFBC0
+        splash = std::make_unique<Splash>(app_, app_.Localized("images\\%s\\Death.nif"), 2.5f, 3.0f,
+                                          camera.Get());   // 0x000EFBC0 (FormatLocalized 0x0029540C)
     }
     if (rendered) {
         splash.reset();
@@ -408,7 +409,8 @@ bool DeathContext::Update() {                         // orig: 0x0002C1C0
     if (state == 0) {
         (void)ShowSplash();
         state = 1;
-        gameOverSound = app_.LoadSound("Sounds\\Localized\\English\\menu\\voice\\GameOver.wav", 0);   // +0x34
+        gameOverSound = app_.LoadSound(app_.Localized("Sounds\\Localized\\%s\\menu\\voice\\GameOver.wav"),
+                                       0);    // +0x34 (FormatLocalized 0x002953E0)
         // (!= -1: Sound_PlaySFX(it, 0): sound)
     } else if (state == 1) {
         if (!ShowSplash()) state = 2;

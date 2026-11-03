@@ -20,8 +20,9 @@ chip has its own little DSP programs (the effects in `dsstdfx.bin` on the disc, 
 
 ### You'll need your own copy
 
-There's no game data in here. You need your own NTSC-U Xbox copy of Futurama, either as a disc image (`.iso`) or the
-extracted files. All the models, textures, sounds, movies and scripts get loaded from that when you play.
+There's no game data in here. You need your own Xbox copy of Futurama, either the North American (NTSC-U) or the
+European (PAL) one, as a disc image (`.iso`) or the extracted files. All the models, textures, sounds, movies and
+scripts get loaded from that when you play.
 
 ## Playing
 
@@ -85,39 +86,41 @@ Really close. Every game function the tests reach (701 of them) matches the orig
 object tests, 60 level tests, 38 rendering tests, the menus, sound, movies and full playthroughs. One run goes from
 the start of level 1-1 to the end and on into level 1-2, and all 3.7 million things it compares match.
 
-These are the levels I've played through myself with every frame compared against the original code in a CPU
-emulator. In several places the original reads memory it never set up, which leads to undefined behaviour. I don't
-emulate the memory layout, so it's not possible to replicate the exact undefined-ness here. Instead I either fix the
-bugs or hard-code reasonable start values (see [Original bug fixes](#original-bug-fixes)). During the frame-matched
-comparisons, I take the memory values from the emulated CPU and hand them to a dev version of the port, so they can
-stay in perfect step. Some frames only differed in the internal ID numbers the level scripts give objects. Those don't
-change anything you see or play, so I count them as matching.
+I've played the whole game through, all 22 levels in order, each one carrying on from where the last ended with the
+same health, lives and ammo. That's about 3.5 hours and 752,000 frames, compared one by one against the original
+running in an emulator, and every frame matches. Where the original reads memory it never set up, the checks hand
+the port the original's values so the two stay in step (see [Original bug fixes](#original-bug-fixes)). Internal ID
+numbers the scripts give objects sometimes differ, but they don't change anything you see or play.
 
-| Level | Name | Frames | Result |
-|---|---|---|---|
-| 1-1 | Planet Express | 9,369 (~2.5 min) | Matches |
-| 1-2 | Sewers | 75,143 (~21 min) | Matches |
-| 1-3 | Subway | 27,999 (~8 min) | Matches |
-| 1-4 | Old New York | 82,111 (~23 min) | Matches |
-| 1-5 | Red Light District | 25,691 (~7 min) | Matches |
-| 1-7 | Uptown | 25,539 (~7 min) | Matches |
-| 1-6 | New New York | 45,736 (~13 min) | Matches |
-| 2-1 | Weasel Canyon | 43,898 (~12 min) | Matches |
-| 2-6 | Run, Bender, Run | 7,117 (~2 min) | Matches |
-| 2-2 | The Mine Facility | 20,686 (~6 min) | Matches |
-| 2-3 | Red Rock Creek | 19,462 (~5.5 min) | Matches |
-| 2-4 | The Junkyard | 27,562 (~7.5 min) | Matches |
-| 2-5 | Rumble in the Junkyard | 14,752 (~4 min) | Matches |
-| 3-1 | Market Square | 20,383 (~5.5 min) | Matches |
-| 3-2 | Left Wing | 38,276 (~10.5 min) | Matches |
-| 3-3 | Right Wing | 53,185 (~15 min) | Matches |
-| 3-6 | Temple Courtyard | 28,896 (~8 min) | Matches |
-| 3-4 | Inner Temple | 53,104 (~15 min) | Matches |
-| 4-1 | Bogad Swamp Trail | 15,855 (~4.5 min) | Matches |
-| 5-1 | Bender's Breakout | 33,217 (~9 min) | Matches |
-| 5-2 | Leela's Last Laugh | 46,522 (~13 min) | Matches |
-| 5-3 | Fry Fights Back | 37,798 (~10.5 min) | Matches |
-| 3-5 | Courtyard II (removed) | | Untested |
+<details>
+<summary>Per-level details</summary>
+
+| Level | Name | Frames |
+|---|---|---|
+| 1-1 | Planet Express | 9,369 (~2.5 min) |
+| 1-2 | Sewers | 75,143 (~21 min) |
+| 1-3 | Subway | 27,999 (~8 min) |
+| 1-4 | Old New York | 82,111 (~23 min) |
+| 1-5 | Red Light District | 25,691 (~7 min) |
+| 1-7 | Uptown | 25,539 (~7 min) |
+| 1-6 | New New York | 45,736 (~13 min) |
+| 2-1 | Weasel Canyon | 43,898 (~12 min) |
+| 2-6 | Run, Bender, Run | 7,117 (~2 min) |
+| 2-2 | The Mine Facility | 20,686 (~6 min) |
+| 2-3 | Red Rock Creek | 19,462 (~5.5 min) |
+| 2-4 | The Junkyard | 27,562 (~7.5 min) |
+| 2-5 | Rumble in the Junkyard | 14,752 (~4 min) |
+| 3-1 | Market Square | 20,383 (~5.5 min) |
+| 3-2 | Left Wing | 38,276 (~10.5 min) |
+| 3-3 | Right Wing | 53,185 (~15 min) |
+| 3-6 | Temple Courtyard | 28,896 (~8 min) |
+| 3-4 | Inner Temple | 53,104 (~15 min) |
+| 4-1 | Bogad Swamp Trail | 15,855 (~4.5 min) |
+| 5-1 | Bender's Breakout | 33,217 (~9 min) |
+| 5-2 | Leela's Last Laugh | 46,522 (~13 min) |
+| 5-3 | Fry Fights Back | 37,798 (~10.5 min) |
+
+</details>
 
 What I can't fully promise yet:
 
@@ -126,6 +129,14 @@ What I can't fully promise yet:
 - The emulator I tested against does a few maths instructions (sine, cosine and a couple of others) slightly
   differently from a real Xbox, so those could be off in the very last bit.
 - Code that nothing ever reaches, like old debug features, is ported but untested.
+
+## Quality-of-life improvements
+
+- **A language menu for the PAL disc.** The European Xbox release takes its language from the console's settings. The
+  PS2 version has a language menu at start-up, and its graphics are still on the Xbox discs, so I ported it. Pick
+  English, French, German, Italian or Spanish and you get that language's text, speech and movies. The NTSC disc
+  only has English speech, so it stays English.
+- **60 Hz on both discs.** The PAL game originally ran at 50 Hz. Here it runs at 60 Hz, like the NTSC one.
 
 ## Original bug fixes
 
@@ -142,7 +153,7 @@ the original's result comes down to luck (memory it never sets up) or would cras
 | A respawned enemy can skip planning its path and walk straight at you for a moment | Fixed |
 | A grenade trooper killed before it ever attacks throws its dying grenade in an unpredictable direction | Fixed |
 | A respawned weasel can copy the death animation of the weasel it replaced | Fixed |
-| A few enemies (the 2-5 tank, a 3-5 shooter, the 5-1 Destructor) start falling one frame late | Fixed |
+| A few enemies (the 2-5 tank, the 5-1 Destructor) start falling one frame late | Fixed |
 | Resetting the player can shift the player's model out of place | Fixed |
 | The lock-on marker's see-through level is random instead of half | Fixed |
 | The high priest (3-6) starts with a random summon timer and warp spot | Fixed |

@@ -54,6 +54,7 @@ namespace fut::game::app {
 
 class App;
 class IntroContext;
+class LanguageSelectContext;
 class FrontendContext;
 class AttractContext;
 class IngameContext;
@@ -82,6 +83,12 @@ struct AppServices {
     sound::GameSound* sound = nullptr;
     ni::NiRenderer* renderer = nullptr;               // orig: App+0x104 (null: no drawing)
     SaveStorage* saves = nullptr;                     // the U:\ save games (MemoryCards.h); null = an empty card
+    // The disc's region: App::Init 0x000D2730 mounts sysPAL.img / FutPAL##.img when present (App+0xE8 = 0); the
+    // file layer mounted them already (fs::Vfs::IsPal). false = the NTSC disc.
+    bool pal = false;
+    // XGetLanguage: the console's language (XC_LANGUAGE_*: 1 English, 3 German, 4 French, 5 Spanish, 6 Italian),
+    // which App::Init gives the PAL game (0x000D2825 / 0x000A2983); unset = 1, English.
+    std::function<u32()> consoleLanguage;
     u64 qpf = 1000000;                                // QueryPerformanceFrequency
     // The movie player's platform (game/app/MoviePlayer.h); the app passes its MovieService.
     MovieService* movies = nullptr;
@@ -191,6 +198,9 @@ public:
     CheatRecorder cheats;                             // orig: DAT_002E7C1C (new(0x38) 0x0002C440 at App init)
     stream::Manager streams;                          // orig: the App's NiStream part (App+0xA0 the request list)
     std::unique_ptr<text::TextManager> text;          // orig: the TextManager singleton DAT_002EC6E0
+    // orig: TextManager::FormatLocalized 0x000D9DF0 of the singleton (its language for the %s); without the text
+    // manager (before Init) the default language, "English".
+    std::string Localized(const char* format) const;
     std::unique_ptr<ErrorOverlay> errorOverlay;       // orig: 0x000F3470's globals (DAT_002F0940..)
     std::unique_ptr<MemoryCards> memoryCards;         // orig: App+0xF4 (0x000E4B30)
     std::unique_ptr<PauseMenu> pause;                 // orig: DAT_002E9428 (built by the Intro, persistent)
@@ -211,6 +221,7 @@ public:
     f32 lastRenderDt = 0;                             // orig: DAT_002E7C28
     u32 lastSteps = 0;                                // (port) the fixed steps of the last frame (STEPS lines)
     IntroContext* intro = nullptr;                    // orig: DAT_002DAE30
+    LanguageSelectContext* languageSelect = nullptr;  // (PORT ADDITION, the PAL disc only: LanguageSelect.h)
     FrontendContext* frontend = nullptr;
     AttractContext* attract = nullptr;                // orig: DAT_002DAF58
     IngameContext* ingame = nullptr;                  // orig: DAT_002DAC60

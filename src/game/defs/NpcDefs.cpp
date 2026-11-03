@@ -51,8 +51,9 @@ void GenericNPCDef::Construct(DefContext& ctx, const LevelData& level, const std
         return level.FindEffectObject(n);
     };
     const auto Localized = [](const char* format, const DefContext& c) {   // orig: 0x000D9DF0
-        char buffer[256];
-        std::snprintf(buffer, sizeof buffer, format, c.language.c_str());
+        if (c.text) return c.text->FormatLocalized(format);
+        char buffer[256];                             // (no text manager: the default language)
+        std::snprintf(buffer, sizeof buffer, format, "English");
         return std::string(buffer);
     };
     const auto NewLaser = [&](const char* n, const LevelData& l, std::vector<std::unique_ptr<Def>>& out) {

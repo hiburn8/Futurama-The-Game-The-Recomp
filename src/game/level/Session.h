@@ -29,6 +29,10 @@ namespace fut::game {
 // Reads a file of the game's file system (LevelLoadOptions::readFile).
 using ReadFileFn = std::function<bool(const std::string& path, std::vector<u8>& out)>;
 
+// A file's first top-level object as a NiSourceTexture (null when the file is missing or holds something else): the
+// images the screens load (the loading screens' pictures, their spinner frames, the language screen's flags).
+ni::NiPointer<ni::NiSourceTexture> LoadSourceTexture(const ReadFileFn& readFile, const std::string& path);
+
 // orig: the loading screen (Session +0x11C, ctor 0x000EFBF0, vtbl 0x002A58A0; base 0x000EF710 vtbl 0x002A5844): vf04
 // Update 0x000EED90 (real frame time; the camera's Click every App frame of the load: it is the BeginScene that packs
 // the first stage's pre-cache before the second is loaded, renderer_plan.md 9), vf10 FadeOut 0x000EE8B0, vf14

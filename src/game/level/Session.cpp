@@ -78,8 +78,9 @@ void Session::Start(const std::string& arg) {         // orig: 0x000C2340
     const std::string& levelName = level.name;
     // orig: new(0x58) 0x000EFBF0(path, Ingame NiCamera (unused), 1, 1) with sprintf("images\\%s\\%s.nif",
     // TextManager::GetLanguage, S+0xC) 0x002A33C8
-    loadingScreen.emplace(o_.renderer, &o_.readFile, "images\\" + o_.defContext.language + "\\" + levelName + ".nif",
-                          "images\\" + o_.defContext.language + "\\default.nif");
+    const std::string language = o_.services.text ? o_.services.text->Language() : std::string("English");
+    loadingScreen.emplace(o_.renderer, &o_.readFile, "images\\" + language + "\\" + levelName + ".nif",
+                          "images\\" + language + "\\default.nif");
     // orig: the "Ingame" camera object (0x760 bytes, ctor 0x00019DB0; camera.md 1.1) attaches its NiCamera to the
     // scene (first free slot, 0x0001A5F3) after keeping the scene at NiCamera +0x15C. Camera.h: what is ported.
     level.ingameCamera = new ni::NiCamera;
@@ -250,7 +251,8 @@ bool Session::OnStream(stream::Request& r) {          // orig: 0x000C5BD0 (this 
             p = "Levels\\" + name + "\\defs.nif";
             break;
         case 10:
-            p = "Levels\\" + name + "\\ingame_dlg_" + ctx.language + ".nif";
+            p = "Levels\\" + name + "\\ingame_dlg_" + (ctx.text ? ctx.text->Language() : std::string("English")) +
+                ".nif";                               // ("Levels\\%s\\ingame_dlg_%s.nif": TextManager +0x18)
             break;
         default:                                      // 11: the Session request is done
             request_.reset();
@@ -566,9 +568,6 @@ void Session::UpdatePlay() {                          // orig: 0x000C8C30, the p
     }
 }
 
-namespace {
-
-// A file's first top-level object as a NiSourceTexture (null when the file is missing or holds something else).
 ni::NiPointer<ni::NiSourceTexture> LoadSourceTexture(const ReadFileFn& readFile, const std::string& path) {
     std::vector<u8> bytes;
     if (!readFile || !readFile(path, bytes)) return {};
@@ -576,6 +575,8 @@ ni::NiPointer<ni::NiSourceTexture> LoadSourceTexture(const ReadFileFn& readFile,
     if (!s.Load(bytes) || s.TopLevelLinks().empty()) return {};
     return dynamic_cast<ni::NiSourceTexture*>(s.ResolveLink(s.TopLevelLinks()[0]));
 }
+
+namespace {
 
 // orig: 0x000EE9A0 (screen, texture, tiles[6]): the texture's pixel data (level 0) cut into tiles of 256 / 256 / 128
 // columns by 256 / 256 rows (the rows read with the source's pitch), each a new NiPixelData (0x001112F0: one level,

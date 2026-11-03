@@ -1,6 +1,7 @@
 // Decompiled from default.xbe 0x000D9A20-0x000DA4F0. See LanguageDb.h for the format.
 #include "game/text/LanguageDb.h"
 
+#include <cstdio>
 #include <cstring>
 
 namespace fut::text {
@@ -161,6 +162,12 @@ const char* TextManager::GetStr3(const std::string& id, const LanguageDb* db) co
 const char* TextManager::GetStr4(const std::string& id, const LanguageDb* db) const {   // orig: 0x000D9D10
     const LanguageDb::Entry* e = Find(id, db);
     return e ? e->str4.c_str() : nullptr;
+}
+
+std::string TextManager::FormatLocalized(const char* format) const {   // orig: 0x000D9DF0
+    char buffer[0x100];                               // (DAT_002EC7D8; the game's formats are short paths)
+    std::snprintf(buffer, sizeof buffer, format, language_.c_str());
+    return buffer;
 }
 
 const char* TextManager::LanguageNameForXbox(u32 xboxLanguage) {   // orig: 0x000D9A20
