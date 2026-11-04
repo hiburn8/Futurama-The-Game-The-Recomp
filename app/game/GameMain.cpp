@@ -3,13 +3,17 @@
 // the decompiled renderer (render/nixbox NiXBoxRenderer on the D3D11 backend of its D3D8 stream), the controller on
 // port 0 (or the keyboard: Window's KeyboardGamepad).
 //
-//   fut_game <iso-or-folder> [--size WxH] [--windowed | --fullscreen] [--filter linear|nearest] [--saves <dir>]
+//   fut_game <iso-or-folder> [--size WxH] [--windowed | --fullscreen] [--render-scale auto|<factor>]
+//            [--filter linear|nearest] [--saves <dir>]
 //   fut_game                       (no arguments, e.g. double-clicked: platform/win32/Launcher.h finds the disc)
 //
 // The picture: the game renders the Xbox's 640 x 480 frame, which the device draws into the largest 4:3 rectangle of
-// the window, centred, black either side (render/xd3d/D3D11Device.h: Swap), scaled with a bilinear filter (--filter
-// nearest: unfiltered pixels). The window starts borderless full screen on its monitor; Alt+Enter toggles a window
-// of the windowed size (--size WxH, default 1280x960; --size or --windowed start windowed; platform/win32/Window.h).
+// the window, centred, black either side (render/xd3d/D3D11Device.h: Swap). The render scale (default auto) draws
+// that frame at the rectangle's own resolution (a factor: at factor x 640 x 480, scaled to the rectangle with a
+// bilinear filter, or --filter nearest for unfiltered pixels; 1 is the Xbox's picture); the game itself is unchanged
+// (docs/analysis/render_scale_plan.md). The window starts borderless full screen on its monitor; Alt+Enter toggles
+// a window of the windowed size (--size WxH, default 1280x960; --size or --windowed start windowed;
+// platform/win32/Window.h).
 //
 // The release build is a Windows-subsystem program (no console window when double-clicked; started from a terminal
 // it writes to that terminal); its errors also go to message boxes.
@@ -102,20 +106,26 @@ int main(int argc, char** argv) {
     std::string source = argc >= 2 ? argv[1] : platform::FindDisc(CheckDisc);   // the disc image / folder
     if (argc < 2 && source.empty()) {                 // (no argument and the dialog cancelled)
         std::fprintf(stderr, "usage: fut_game <iso-or-folder> [--size WxH] [--windowed | --fullscreen]"
-                             " [--filter linear|nearest] [--saves <dir>]");
+                             " [--render-scale auto|<factor>] [--filter linear|nearest] [--saves <dir>]");
         std::fputs("\n", stderr);
         return 2;
     }
     u32 width = 1280, height = 960;                   // the windowed size (--size WxH)
     bool fullscreen = true;                           // (--size / --windowed: a window; --fullscreen: full screen)
     render::xd3d::D3D11Device::Filter filter = render::xd3d::D3D11Device::Filter::Linear;   // (--filter)
+    double renderScale = 0;                           // (--render-scale: 0 = auto)
     std::filesystem::path saveDir = SaveFolder();     // (--saves <dir>)
     for (int i = 2; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--size" && i + 1 < argc) std::sscanf(argv[++i], "%ux%u", &width, &height), fullscreen = false;
         else if (a == "--windowed") fullscreen = false;
         else if (a == "--fullscreen") fullscreen = true;
-        else if (a == "--filter" && i + 1 < argc) {
+        else if (a == "--render-scale" && i + 1 < argc) {
+            const std::string s = argv[++i];
+            if (s == "auto") renderScale = 0;
+            else if (renderScale = std::atof(s.c_str()); !(renderScale >= 0.25 && renderScale <= 16))
+                return fail("--render-scale takes auto or a factor from 0.25 to 16", 2);
+        } else if (a == "--filter" && i + 1 < argc) {
             const std::string f = argv[++i];
             if (f == "nearest") filter = render::xd3d::D3D11Device::Filter::Nearest;
             else if (f == "linear") filter = render::xd3d::D3D11Device::Filter::Linear;
@@ -139,6 +149,7 @@ int main(int argc, char** argv) {
     platform::Window window;
     if (!window.Create("Futurama", width, height, true, fullscreen)) return fail("window creation failed", 1);
     render::xd3d::D3D11Device device;                 // the decompiled renderer's D3D8 stream, executed
+    device.SetRenderScale(renderScale);               // (before Init: the targets are made at the scale)
     if (!device.Init(window.Handle(), error)) return fail(error, 1);
     device.SetFilter(filter);
     render::nixbox::NiXBoxRenderer renderer(device);  // the factory 0x0014C200 (App+0x104)

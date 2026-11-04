@@ -40,6 +40,12 @@ public:
     void Resize(u32 width, u32 height);
     enum class Filter { Linear, Nearest };
     void SetFilter(Filter filter);
+    // The render scale (docs/analysis/render_scale_plan.md): every render target (the back buffer, its depth, the
+    // rendered textures) is round(logical x factor) pixels behind the logical size the game sees; the game's D3D8
+    // stream is unchanged. factor <= 0 = auto: the canvas is the window's 4:3 rectangle (so Swap draws 1:1), following
+    // every Resize; 1 = the Xbox's 640 x 480. May be called before or after Init.
+    void SetRenderScale(double factor);
+    double RenderScale() const;
     u32 draws() const { return draws_; }
 
     void Clear(u32 count, const D3DRECT* rects, u32 flags, u32 color, f32 z, u32 stencil) override;

@@ -129,18 +129,20 @@ VSOut VSMain(VSIn i) {
     // viewport constants 0x00238000 subtract 0 (0.5 only in a multisample mode; the game's surfaces are not
     // multisampled, 0x00146210: 0x11): the NV2A samples at pixel centres (+0.5, as D3D11), so the geometry moves by
     // 0.53125 + (x, y) pixels: D3D8's integer pixel centres plus 1 / 32 that keeps edges on integer coordinates off the
-    // sample points (without it thin quads such as NiOutline's edge strips break up into dots).
+    // sample points (without it thin quads such as NiOutline's edge strips break up into dots). Under the render
+    // scale the 0.53125 is a PHYSICAL pixel (it is about the raster the GPU samples): ssOffset.zw = logical / physical
+    // pixels of the target (1 at scale 1); the game's (x, y) stays logical.
     if (misc2.w > 0.5) {                               // XYZRHW: screen pixels
         float w = i.pos.w != 0 ? 1 / i.pos.w : 1;
-        float2 s = i.pos.xy + ssOffset.xy + 0.53125 - vp.xy;
+        float2 s = i.pos.xy + ssOffset.xy + 0.53125 * ssOffset.zw - vp.xy;
         o.pos = float4((s.x / vp.z * 2 - 1) * w, (1 - s.y / vp.w * 2) * w, i.pos.z * w, w);
         pv = float3(i.pos.xy, i.pos.z);
     } else {
         precise float4 pw = mul(float4(i.pos.xyz, 1), world);
         precise float4 v = mul(pw, view);
         precise float4 c = mul(v, proj);
-        c.x += c.w / vp.z * 2 * (0.53125 + ssOffset.x);   // the screen-space offset above, in clip units
-        c.y -= c.w / vp.w * 2 * (0.53125 + ssOffset.y);
+        c.x += c.w / vp.z * 2 * (0.53125 * ssOffset.z + ssOffset.x);   // the screen-space offset above, in clip units
+        c.y -= c.w / vp.w * 2 * (0.53125 * ssOffset.w + ssOffset.y);
         o.pos = c;
         pv = v.xyz;
         if (misc2.x > 0.5) {
@@ -499,14 +501,28 @@ struct D3D11Device::Impl {
     ComPtr<ID3D11SamplerState> blitSamplers[2];
     ComPtr<ID3D11RasterizerState> blitRaster;
     Filter filter = Filter::Linear;
+    // The render scale (D3D11Device.h SetRenderScale; docs/analysis/render_scale_plan.md): every target's texture is
+    // round(logical x scale) pixels behind the logical size the game sees; `auto` follows the window's 4:3 rectangle
+    // (Resize), so the presentation draws 1:1. Without a window (offscreen) auto is 1.
+    double scale = 1.0;
+    bool autoScale = true;
+    double fixedScale = 1.0;
     struct Target {                                   // a D3D11 view of a colour / depth resource
         ComPtr<ID3D11Texture2D> tex;
         ComPtr<ID3D11RenderTargetView> rtv;
         ComPtr<ID3D11DepthStencilView> dsv;
         ComPtr<ID3D11ShaderResourceView> srv;
-        u32 width = 0, height = 0;
+        u32 width = 0, height = 0;                    // logical (the resource's: viewports, rects, RHW vertices)
+        u32 physicalWidth = 0, physicalHeight = 0;    // the texture's
+        bool depth = false;
     };
     std::unordered_map<const Resource*, Target> targets;   // render targets (the back buffer, rendered textures)
+    u32 Physical(u32 logical) const { return std::max(u32(std::lround(logical * scale)), 1u); }
+    bool MakeTarget(const Resource* key, bool depth, Target& t);
+    void ApplyScale(double s);                        // re-makes every target at the new scale (colour content kept)
+    // A textured quad over the viewport of `rtv` (the blit shaders): the presentation and the scale's copies.
+    void DrawQuad(ID3D11RenderTargetView* rtv, const D3D11_VIEWPORT& v, ID3D11ShaderResourceView* src,
+                  ID3D11SamplerState* sampler);
     struct Tex {
         ComPtr<ID3D11ShaderResourceView> srv;
         ComPtr<ID3D11Texture2D> texture;              // (a YUY2 texture: updated when its texels change)
@@ -627,7 +643,29 @@ bool D3D11Device::Init(HWND__* window, std::string& error) {
         d.device->CreateTexture2D(&td, &init, &t);
         d.device->CreateShaderResourceView(t.Get(), nullptr, &d.white);
     }
-    return d.ColorTarget(backBuffer()) && d.DepthTarget(depthBuffer());
+    if (!d.ColorTarget(backBuffer()) || !d.DepthTarget(depthBuffer())) return false;
+    SetRenderScale(d.autoScale ? 0.0 : d.fixedScale);   // (the targets at the scale: auto from the client area)
+    return true;
+}
+
+bool D3D11Device::Impl::MakeTarget(const Resource* key, bool depth, Target& t) {
+    t.depth = depth;
+    t.width = std::max(key->width, 1u), t.height = std::max(key->height, 1u);
+    t.physicalWidth = Physical(t.width), t.physicalHeight = Physical(t.height);
+    D3D11_TEXTURE2D_DESC td = {};
+    td.Width = t.physicalWidth, td.Height = t.physicalHeight, td.MipLevels = 1, td.ArraySize = 1;
+    td.SampleDesc.Count = 1;
+    if (depth) {
+        td.Format = DXGI_FORMAT_D24_UNORM_S8_UINT, td.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+        return SUCCEEDED(device->CreateTexture2D(&td, nullptr, &t.tex)) &&
+               SUCCEEDED(device->CreateDepthStencilView(t.tex.Get(), nullptr, &t.dsv));
+    }
+    td.Format = DXGI_FORMAT_R8G8B8A8_UNORM, td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    if (FAILED(device->CreateTexture2D(&td, nullptr, &t.tex)) ||
+        FAILED(device->CreateRenderTargetView(t.tex.Get(), nullptr, &t.rtv)))
+        return false;
+    device->CreateShaderResourceView(t.tex.Get(), nullptr, &t.srv);
+    return true;
 }
 
 D3D11Device::Impl::Target* D3D11Device::Impl::ColorTarget(Resource* r) {
@@ -636,15 +674,7 @@ D3D11Device::Impl::Target* D3D11Device::Impl::ColorTarget(Resource* r) {
     auto it = targets.find(key);
     if (it != targets.end()) return &it->second;
     Target t;
-    t.width = std::max(key->width, 1u), t.height = std::max(key->height, 1u);
-    D3D11_TEXTURE2D_DESC td = {};
-    td.Width = t.width, td.Height = t.height, td.MipLevels = 1, td.ArraySize = 1;
-    td.Format = DXGI_FORMAT_R8G8B8A8_UNORM, td.SampleDesc.Count = 1;
-    td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-    if (FAILED(device->CreateTexture2D(&td, nullptr, &t.tex)) ||
-        FAILED(device->CreateRenderTargetView(t.tex.Get(), nullptr, &t.rtv)))
-        return nullptr;
-    device->CreateShaderResourceView(t.tex.Get(), nullptr, &t.srv);
+    if (!MakeTarget(key, false, t)) return nullptr;
     return &(targets[key] = std::move(t));
 }
 
@@ -653,14 +683,43 @@ D3D11Device::Impl::Target* D3D11Device::Impl::DepthTarget(Resource* r) {
     auto it = targets.find(r);
     if (it != targets.end()) return &it->second;
     Target t;
-    t.width = std::max(r->width, 1u), t.height = std::max(r->height, 1u);
-    D3D11_TEXTURE2D_DESC td = {};
-    td.Width = t.width, td.Height = t.height, td.MipLevels = 1, td.ArraySize = 1;
-    td.Format = DXGI_FORMAT_D24_UNORM_S8_UINT, td.SampleDesc.Count = 1, td.BindFlags = D3D11_BIND_DEPTH_STENCIL;
-    if (FAILED(device->CreateTexture2D(&td, nullptr, &t.tex)) ||
-        FAILED(device->CreateDepthStencilView(t.tex.Get(), nullptr, &t.dsv)))
-        return nullptr;
+    if (!MakeTarget(r, true, t)) return nullptr;
     return &(targets[r] = std::move(t));
+}
+
+void D3D11Device::Impl::ApplyScale(double s) {
+    if (s == scale || !device) return;
+    scale = s;
+    ctx->OMSetRenderTargets(0, nullptr, nullptr);
+    for (auto& [key, old] : targets) {               // (in place: the map's nodes, and so the pointers, stay)
+        Target t;
+        if (!MakeTarget(key, old.depth, t)) continue;
+        if (!old.depth && old.srv && t.rtv)           // a rendered texture's content, at the new size
+            DrawQuad(t.rtv.Get(), D3D11_VIEWPORT{0, 0, f32(t.physicalWidth), f32(t.physicalHeight), 0, 1},
+                     old.srv.Get(), blitSamplers[0].Get());
+        old = std::move(t);
+    }
+}
+
+void D3D11Device::Impl::DrawQuad(ID3D11RenderTargetView* rtv, const D3D11_VIEWPORT& v, ID3D11ShaderResourceView* src,
+                                 ID3D11SamplerState* sampler) {
+    // None of the pipeline's state is kept for it or restored after (every Draw / Clear sets all of its own).
+    ID3D11ShaderResourceView* none[5] = {};
+    ctx->PSSetShaderResources(0, 5, none);           // (the source may be bound as a texture)
+    ctx->OMSetRenderTargets(1, &rtv, nullptr);
+    ctx->RSSetViewports(1, &v);
+    ctx->RSSetState(blitRaster.Get());
+    ctx->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF);
+    ctx->OMSetDepthStencilState(nullptr, 0);
+    ctx->IASetInputLayout(nullptr);
+    ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+    ctx->VSSetShader(blitVs.Get(), nullptr, 0);
+    ctx->PSSetShader(blitPs.Get(), nullptr, 0);
+    ctx->PSSetShaderResources(4, 1, &src);
+    ctx->PSSetSamplers(4, 1, &sampler);
+    ctx->Draw(4, 0);
+    ctx->PSSetShaderResources(4, 1, none);           // (the source is a render target again next)
+    ctx->OMSetRenderTargets(0, nullptr, nullptr);
 }
 
 ID3D11ShaderResourceView* D3D11Device::Impl::Texture(Resource* r) {
@@ -781,7 +840,10 @@ void D3D11Device::Clear(u32 count, const D3DRECT* rects, u32 flags, u32 color, f
     const bool whole = r.x1 <= 0 && r.y1 <= 0 && u32(r.x2) >= ct->width && u32(r.y2) >= ct->height;
     if ((flags & 0xF0) && whole) d.ctx->ClearRenderTargetView(ct->rtv.Get(), c);
     else if ((flags & 0xF0) && d.ctx1) {
-        const D3D11_RECT rr{r.x1, r.y1, r.x2, r.y2};
+        // (the rect in the target's physical pixels under the render scale)
+        const double sx = double(ct->physicalWidth) / ct->width, sy = double(ct->physicalHeight) / ct->height;
+        const D3D11_RECT rr{LONG(std::lround(r.x1 * sx)), LONG(std::lround(r.y1 * sy)), LONG(std::lround(r.x2 * sx)),
+                            LONG(std::lround(r.y2 * sy))};
         d.ctx1->ClearView(ct->rtv.Get(), c, &rr, 1);
     }
     if (!(flags & 3) || !dt) return;
@@ -817,7 +879,7 @@ void D3D11Device::Clear(u32 count, const D3DRECT* rects, u32 flags, u32 color, f
     rd.FillMode = D3D11_FILL_SOLID, rd.CullMode = D3D11_CULL_NONE, rd.DepthClipEnable = FALSE;
     ComPtr<ID3D11RasterizerState> rs;
     d.device->CreateRasterizerState(&rd, &rs);
-    const D3D11_VIEWPORT v{0, 0, f32(ct->width), f32(ct->height), 0, 1};
+    const D3D11_VIEWPORT v{0, 0, f32(ct->physicalWidth), f32(ct->physicalHeight), 0, 1};   // (the quad is in clip space)
     d.ctx->OMSetRenderTargets(1, ct->rtv.GetAddressOf(), dt->dsv.Get());
     d.ctx->RSSetViewports(1, &v);
     d.ctx->RSSetState(rs.Get());
@@ -850,26 +912,13 @@ void D3D11Device::Swap(u32 flags) {
         if (d.windowRtv) {
             const f32 black[4] = {0, 0, 0, 1};
             d.ctx->ClearRenderTargetView(d.windowRtv.Get(), black);
-            const double scale = std::min(double(d.windowWidth) / bb->width, double(d.windowHeight) / bb->height);
-            const u32 w = std::max(u32(std::lround(bb->width * scale)), 1u);
-            const u32 h = std::max(u32(std::lround(bb->height * scale)), 1u);
+            // (the canvas's shape from its physical size: with the auto scale it is this rectangle, a 1:1 draw)
+            const double fit = std::min(double(d.windowWidth) / bb->physicalWidth,
+                                        double(d.windowHeight) / bb->physicalHeight);
+            const u32 w = std::max(u32(std::lround(bb->physicalWidth * fit)), 1u);
+            const u32 h = std::max(u32(std::lround(bb->physicalHeight * fit)), 1u);
             const D3D11_VIEWPORT v{f32((d.windowWidth - w) / 2), f32((d.windowHeight - h) / 2), f32(w), f32(h), 0, 1};
-            ID3D11ShaderResourceView* none[5] = {};
-            d.ctx->PSSetShaderResources(0, 5, none);  // (the back buffer may be bound as a texture)
-            d.ctx->OMSetRenderTargets(1, d.windowRtv.GetAddressOf(), nullptr);
-            d.ctx->RSSetViewports(1, &v);
-            d.ctx->RSSetState(d.blitRaster.Get());
-            d.ctx->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF);
-            d.ctx->OMSetDepthStencilState(nullptr, 0);
-            d.ctx->IASetInputLayout(nullptr);
-            d.ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-            d.ctx->VSSetShader(d.blitVs.Get(), nullptr, 0);
-            d.ctx->PSSetShader(d.blitPs.Get(), nullptr, 0);
-            d.ctx->PSSetShaderResources(4, 1, bb->srv.GetAddressOf());
-            d.ctx->PSSetSamplers(4, 1, d.blitSamplers[d.filter == Filter::Nearest ? 1 : 0].GetAddressOf());
-            d.ctx->Draw(4, 0);
-            d.ctx->PSSetShaderResources(4, 1, none);  // (the back buffer is a render target again next frame)
-            d.ctx->OMSetRenderTargets(0, nullptr, nullptr);
+            d.DrawQuad(d.windowRtv.Get(), v, bb->srv.Get(), d.blitSamplers[d.filter == Filter::Nearest ? 1 : 0].Get());
         }
         d.swapChain->Present(1, 0);
     }
@@ -882,9 +931,28 @@ void D3D11Device::Resize(u32 width, u32 height) {
     d.ctx->OMSetRenderTargets(0, nullptr, nullptr);
     if (SUCCEEDED(d.swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0)))
         d.windowWidth = width, d.windowHeight = height;
+    if (d.autoScale) SetRenderScale(0.0);             // the canvas = the window's 4:3 rectangle
 }
 
 void D3D11Device::SetFilter(Filter filter) { impl_->filter = filter; }
+
+void D3D11Device::SetRenderScale(double factor) {
+    Impl& d = *impl_;
+    d.autoScale = factor <= 0;
+    d.fixedScale = d.autoScale ? 1.0 : factor;
+    if (!d.device) return;
+    if (!d.autoScale) {
+        d.ApplyScale(d.fixedScale);
+    } else if (d.swapChain) {                         // the window's 4:3 rectangle, in canvas units
+        const Resource* bb = backBuffer();
+        d.ApplyScale(std::min(double(d.windowWidth) / std::max(bb->width, 1u),
+                              double(d.windowHeight) / std::max(bb->height, 1u)));
+    } else {
+        d.ApplyScale(1.0);                            // (offscreen: no window to follow)
+    }
+}
+
+double D3D11Device::RenderScale() const { return impl_->scale; }
 
 void D3D11Device::DrawVertices(u32 primitive, u32 start, u32 count) {
     XD3DDevice::DrawVertices(primitive, start, count);
@@ -978,6 +1046,11 @@ void D3D11Device::Draw(u32 primitive, const u16* list, u32 count, u32 start) {
     cb.vp[0] = f32(viewport.X), cb.vp[1] = f32(viewport.Y), cb.vp[2] = f32(std::max(viewport.Width, 1u));
     cb.vp[3] = f32(std::max(viewport.Height, 1u));
     cb.ssOffset[0] = screenSpaceOffset[0], cb.ssOffset[1] = screenSpaceOffset[1];
+    {                                                 // (zw: logical / physical pixels of the target, the shader's
+        const Impl::Target* t = d.ColorTarget(renderTarget);   //  0.53125 physical pixels; 1 at scale 1)
+        cb.ssOffset[2] = t ? f32(t->width) / t->physicalWidth : 1.0f;
+        cb.ssOffset[3] = t ? f32(t->height) / t->physicalHeight : 1.0f;
+    }
     std::memcpy(cb.matDiffuse, material.diffuse, 16), std::memcpy(cb.matAmbient, material.ambient, 16);
     std::memcpy(cb.matSpecular, material.specular, 16), std::memcpy(cb.matEmissive, material.emissive, 16);
     const u32* rs = renderState;
@@ -1141,7 +1214,10 @@ void D3D11Device::Draw(u32 primitive, const u16* list, u32 count, u32 start) {
     ID3D11ShaderResourceView* none[4] = {};
     d.ctx->PSSetShaderResources(0, 4, none);         // (a texture that is the target is unbound first)
     d.ctx->OMSetRenderTargets(1, ct->rtv.GetAddressOf(), dt ? dt->dsv.Get() : nullptr);
-    const D3D11_VIEWPORT v{f32(viewport.X), f32(viewport.Y), f32(viewport.Width), f32(viewport.Height),
+    // (the hardware viewport in the target's physical pixels; the shader's cb.vp stays logical: RHW vertices and the
+    // screen-space offset are in logical pixels and go through clip space)
+    const f32 sx = f32(ct->physicalWidth) / ct->width, sy = f32(ct->physicalHeight) / ct->height;
+    const D3D11_VIEWPORT v{viewport.X * sx, viewport.Y * sy, viewport.Width * sx, viewport.Height * sy,
                            viewport.MinZ, viewport.MaxZ};
     d.ctx->RSSetViewports(1, &v);
     d.ctx->RSSetState(rz.Get());
