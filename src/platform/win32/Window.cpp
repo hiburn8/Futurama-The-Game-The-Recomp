@@ -23,7 +23,11 @@ Window::~Window() {
     if (hwnd_) DestroyWindow(hwnd_);
 }
 
-bool Window::Create(const std::string& title, u32 width, u32 height, bool visible) {
+void Window::SetDpiAware() {
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);   // (fails harmlessly when already set)
+}
+
+bool Window::Create(const std::string& title, u32 width, u32 height, bool visible, bool fullscreen) {
     HINSTANCE inst = GetModuleHandleW(nullptr);
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof wc;
@@ -36,14 +40,36 @@ bool Window::Create(const std::string& title, u32 width, u32 height, bool visibl
 
     RECT r = {0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};
     const DWORD style = WS_OVERLAPPEDWINDOW;
-    AdjustWindowRect(&r, style, FALSE);
+    AdjustWindowRectExForDpi(&r, style, FALSE, 0, GetDpiForSystem());   // (the frame at the screen's DPI)
     hwnd_ = CreateWindowExW(0, kClassName, Widen(title).c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left,
                             r.bottom - r.top, nullptr, nullptr, inst, this);
     if (!hwnd_) return false;
     width_ = width;
     height_ = height;
+    if (fullscreen) SetFullscreen(true);
     if (visible) ShowWindow(hwnd_, SW_SHOW);
     return true;
+}
+
+void Window::SetFullscreen(bool on) {
+    if (!hwnd_ || on == fullscreen_) return;
+    const DWORD visible = IsWindowVisible(hwnd_) ? WS_VISIBLE : 0;
+    if (on) {
+        RECT r = {};
+        GetWindowRect(hwnd_, &r);
+        windowed_[0] = r.left, windowed_[1] = r.top, windowed_[2] = r.right, windowed_[3] = r.bottom;
+        MONITORINFO mi = {};
+        mi.cbSize = sizeof mi;
+        GetMonitorInfoW(MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST), &mi);
+        SetWindowLongPtrW(hwnd_, GWL_STYLE, WS_POPUP | visible);
+        SetWindowPos(hwnd_, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left,
+                     mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
+    } else {
+        SetWindowLongPtrW(hwnd_, GWL_STYLE, WS_OVERLAPPEDWINDOW | visible);
+        SetWindowPos(hwnd_, HWND_NOTOPMOST, windowed_[0], windowed_[1], windowed_[2] - windowed_[0],
+                     windowed_[3] - windowed_[1], SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
+    }
+    fullscreen_ = on;
 }
 
 bool Window::Pump() {
@@ -93,8 +119,13 @@ long long Window::Handle(u32 msg, u64 wParam, s64 lParam) {
         }
         return 0;
     }
-    case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
+        if (wParam == VK_RETURN && (lParam & (1 << 29))) {   // Alt+Enter: the full-screen toggle, not a key of the game's
+            if (!(lParam & (1 << 30))) SetFullscreen(!fullscreen_);   // (not its auto-repeat)
+            return 0;
+        }
+        [[fallthrough]];
+    case WM_KEYDOWN:
         if (wParam < 256) {
             if (!keys_[wParam]) pressed_[wParam] = true;
             keys_[wParam] = true;
@@ -103,6 +134,15 @@ long long Window::Handle(u32 msg, u64 wParam, s64 lParam) {
     case WM_KEYUP:
     case WM_SYSKEYUP:
         if (wParam < 256) keys_[wParam] = false;
+        break;
+    case WM_SYSCHAR:
+        if (wParam == VK_RETURN) return 0;            // (no beep for Alt+Enter)
+        break;
+    case WM_SETCURSOR:
+        if (fullscreen_ && LOWORD(lParam) == HTCLIENT) {   // (no mouse pointer over the full-screen game)
+            SetCursor(nullptr);
+            return TRUE;
+        }
         break;
     case WM_KILLFOCUS:
         for (bool& k : keys_) k = false;

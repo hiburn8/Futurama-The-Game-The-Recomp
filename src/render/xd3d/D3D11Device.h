@@ -33,8 +33,13 @@ public:
     ~D3D11Device() override;
 
     // `window` may be null (offscreen). The Xbox back buffer (surf1, 640 x 480) is a D3D11 render target of that
-    // size; Swap copies it to the window's swap chain (stretched).
+    // size; with a window, Swap draws it into the window's swap chain (the client area's size): the largest 4:3
+    // rectangle, centred, black elsewhere (the Xbox picture kept whole on any window shape), sampled with the filter.
     bool Init(HWND__* window, std::string& error);
+    // The client area's new size (the swap chain's buffers follow; a resize to the same size does nothing).
+    void Resize(u32 width, u32 height);
+    enum class Filter { Linear, Nearest };
+    void SetFilter(Filter filter);
     u32 draws() const { return draws_; }
 
     void Clear(u32 count, const D3DRECT* rects, u32 flags, u32 color, f32 z, u32 stencil) override;

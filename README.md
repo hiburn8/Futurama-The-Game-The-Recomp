@@ -37,7 +37,9 @@ Built it yourself? Double-click works the same, or point it straight at your dis
 build\Release\FuturamaRecomp.exe <your futurama.iso or extracted folder>
 ```
 
-Add `--size 1920x1080` to change the window size (the default is 1280x960). Saves go to
+It starts full screen, with the picture kept at the Xbox's 4:3 shape and black bars either side. Alt+Enter switches
+to a window and back; `--windowed` or `--size 1920x1080` start in a window (the default window is 1280x960), and
+`--filter nearest` gives crisp unfiltered pixels instead of the smooth scaling. Saves go to
 `%APPDATA%\FuturamaRecomp\saves`, or wherever you point `--saves`.
 
 An Xbox controller just works. No controller? The keyboard does it too:

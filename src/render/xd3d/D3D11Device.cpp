@@ -304,6 +304,18 @@ float4 ClearVS(uint id : SV_VertexID) : SV_Position {
     return float4(p, clearZ.x, 1);
 }
 float4 ClearPS() : SV_Target { return clearColor; }
+
+// The presentation (D3D11Device::Swap): the Xbox back buffer drawn over the viewport (the 4:3 rectangle of the window).
+Texture2D blitTex : register(t4);
+SamplerState blitSamp : register(s4);
+struct BlitOut { float4 pos : SV_Position; float2 uv : TEXCOORD0; };
+BlitOut BlitVS(uint id : SV_VertexID) {
+    BlitOut o;
+    o.uv = float2(id & 1, id >> 1);
+    o.pos = float4(o.uv.x * 2 - 1, 1 - o.uv.y * 2, 0, 1);
+    return o;
+}
+float4 BlitPS(BlitOut i) : SV_Target { return float4(blitTex.Sample(blitSamp, i.uv).rgb, 1); }
 )";
 
 struct LightCB {
@@ -475,11 +487,18 @@ struct D3D11Device::Impl {
     ComPtr<ID3D11DeviceContext> ctx;
     ComPtr<ID3D11DeviceContext1> ctx1;
     ComPtr<IDXGISwapChain> swapChain;
-    ComPtr<ID3D11VertexShader> vs, clearVs;
-    ComPtr<ID3D11PixelShader> ps, clearPs;
+    ComPtr<ID3D11VertexShader> vs, clearVs, blitVs;
+    ComPtr<ID3D11PixelShader> ps, clearPs, blitPs;
     ComPtr<ID3D11InputLayout> layout;
     ComPtr<ID3D11Buffer> drawCB, clearCB, vb, ib;
     u32 vbSize = 0, ibSize = 0;
+    // the presentation (Swap with a window): the swap chain's buffer view (released before ResizeBuffers), the
+    // client area's size, the scaling's samplers (Filter::Linear, Filter::Nearest) and rasterizer state
+    ComPtr<ID3D11RenderTargetView> windowRtv;
+    u32 windowWidth = 0, windowHeight = 0;
+    ComPtr<ID3D11SamplerState> blitSamplers[2];
+    ComPtr<ID3D11RasterizerState> blitRaster;
+    Filter filter = Filter::Linear;
     struct Target {                                   // a D3D11 view of a colour / depth resource
         ComPtr<ID3D11Texture2D> tex;
         ComPtr<ID3D11RenderTargetView> rtv;
@@ -517,9 +536,13 @@ bool D3D11Device::Init(HWND__* window, std::string& error) {
     const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0};
     HRESULT hr;
     if (window) {
+        RECT client = {};
+        GetClientRect(window, &client);
+        d.windowWidth = u32(std::max<LONG>(client.right - client.left, 1));
+        d.windowHeight = u32(std::max<LONG>(client.bottom - client.top, 1));
         DXGI_SWAP_CHAIN_DESC sd = {};
         sd.BufferCount = 2;
-        sd.BufferDesc.Width = 640, sd.BufferDesc.Height = 480;
+        sd.BufferDesc.Width = d.windowWidth, sd.BufferDesc.Height = d.windowHeight;
         sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
         sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
         sd.OutputWindow = window;
@@ -539,6 +562,11 @@ bool D3D11Device::Init(HWND__* window, std::string& error) {
         return false;
     }
     d.ctx.As(&d.ctx1);
+    if (d.swapChain) {                                // Alt+Enter is the window's own toggle (platform/win32/Window.h),
+        ComPtr<IDXGIFactory> factory;                 // not DXGI's exclusive full-screen mode
+        if (SUCCEEDED(d.swapChain->GetParent(IID_PPV_ARGS(&factory))))
+            factory->MakeWindowAssociation(window, DXGI_MWA_NO_ALT_ENTER);
+    }
     auto compile = [&](const char* entry, const char* target, ComPtr<ID3DBlob>& blob) {
         ComPtr<ID3DBlob> errors;
         if (SUCCEEDED(D3DCompile(kShader, sizeof kShader - 1, "fixedfunction.hlsl", nullptr, nullptr, entry, target,
@@ -548,14 +576,28 @@ bool D3D11Device::Init(HWND__* window, std::string& error) {
                 (errors ? static_cast<const char*>(errors->GetBufferPointer()) : "unknown");
         return false;
     };
-    ComPtr<ID3DBlob> vsb, psb, cvb, cpb;
+    ComPtr<ID3DBlob> vsb, psb, cvb, cpb, bvb, bpb;
     if (!compile("VSMain", "vs_4_0", vsb) || !compile("PSMain", "ps_4_0", psb) || !compile("ClearVS", "vs_4_0", cvb) ||
-        !compile("ClearPS", "ps_4_0", cpb))
+        !compile("ClearPS", "ps_4_0", cpb) || !compile("BlitVS", "vs_4_0", bvb) || !compile("BlitPS", "ps_4_0", bpb))
         return false;
     d.device->CreateVertexShader(vsb->GetBufferPointer(), vsb->GetBufferSize(), nullptr, &d.vs);
     d.device->CreatePixelShader(psb->GetBufferPointer(), psb->GetBufferSize(), nullptr, &d.ps);
     d.device->CreateVertexShader(cvb->GetBufferPointer(), cvb->GetBufferSize(), nullptr, &d.clearVs);
     d.device->CreatePixelShader(cpb->GetBufferPointer(), cpb->GetBufferSize(), nullptr, &d.clearPs);
+    d.device->CreateVertexShader(bvb->GetBufferPointer(), bvb->GetBufferSize(), nullptr, &d.blitVs);
+    d.device->CreatePixelShader(bpb->GetBufferPointer(), bpb->GetBufferSize(), nullptr, &d.blitPs);
+    for (u32 i = 0; i < 2; ++i) {                     // the presentation's samplers (SetFilter) and rasterizer
+        D3D11_SAMPLER_DESC smp = {};
+        smp.Filter = i == 0 ? D3D11_FILTER_MIN_MAG_MIP_LINEAR : D3D11_FILTER_MIN_MAG_MIP_POINT;
+        smp.AddressU = smp.AddressV = smp.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+        smp.MaxLOD = D3D11_FLOAT32_MAX;
+        d.device->CreateSamplerState(&smp, &d.blitSamplers[i]);
+    }
+    {
+        D3D11_RASTERIZER_DESC rd = {};
+        rd.FillMode = D3D11_FILL_SOLID, rd.CullMode = D3D11_CULL_NONE, rd.DepthClipEnable = FALSE;
+        d.device->CreateRasterizerState(&rd, &d.blitRaster);
+    }
     const D3D11_INPUT_ELEMENT_DESC il[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(CVertex, pos), D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(CVertex, nrm), D3D11_INPUT_PER_VERTEX_DATA, 0},
@@ -797,11 +839,52 @@ void D3D11Device::Swap(u32 flags) {
     Impl::Target* bb = d.ColorTarget(backBuffer());
     if (!bb) return;
     if (d.swapChain) {
-        ComPtr<ID3D11Texture2D> back;
-        if (SUCCEEDED(d.swapChain->GetBuffer(0, IID_PPV_ARGS(&back)))) d.ctx->CopyResource(back.Get(), bb->tex.Get());
+        // The presentation: the window's buffer cleared to black, the back buffer drawn into the largest rectangle
+        // of its own shape (4:3) that fits the client area, whole pixels, centred, with the chosen filter. None of
+        // the pipeline's state is kept for it or restored after (every Draw / Clear sets all of its own).
+        if (!d.windowRtv) {
+            ComPtr<ID3D11Texture2D> back;
+            if (SUCCEEDED(d.swapChain->GetBuffer(0, IID_PPV_ARGS(&back))))
+                d.device->CreateRenderTargetView(back.Get(), nullptr, &d.windowRtv);
+        }
+        if (d.windowRtv) {
+            const f32 black[4] = {0, 0, 0, 1};
+            d.ctx->ClearRenderTargetView(d.windowRtv.Get(), black);
+            const double scale = std::min(double(d.windowWidth) / bb->width, double(d.windowHeight) / bb->height);
+            const u32 w = std::max(u32(std::lround(bb->width * scale)), 1u);
+            const u32 h = std::max(u32(std::lround(bb->height * scale)), 1u);
+            const D3D11_VIEWPORT v{f32((d.windowWidth - w) / 2), f32((d.windowHeight - h) / 2), f32(w), f32(h), 0, 1};
+            ID3D11ShaderResourceView* none[5] = {};
+            d.ctx->PSSetShaderResources(0, 5, none);  // (the back buffer may be bound as a texture)
+            d.ctx->OMSetRenderTargets(1, d.windowRtv.GetAddressOf(), nullptr);
+            d.ctx->RSSetViewports(1, &v);
+            d.ctx->RSSetState(d.blitRaster.Get());
+            d.ctx->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF);
+            d.ctx->OMSetDepthStencilState(nullptr, 0);
+            d.ctx->IASetInputLayout(nullptr);
+            d.ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+            d.ctx->VSSetShader(d.blitVs.Get(), nullptr, 0);
+            d.ctx->PSSetShader(d.blitPs.Get(), nullptr, 0);
+            d.ctx->PSSetShaderResources(4, 1, bb->srv.GetAddressOf());
+            d.ctx->PSSetSamplers(4, 1, d.blitSamplers[d.filter == Filter::Nearest ? 1 : 0].GetAddressOf());
+            d.ctx->Draw(4, 0);
+            d.ctx->PSSetShaderResources(4, 1, none);  // (the back buffer is a render target again next frame)
+            d.ctx->OMSetRenderTargets(0, nullptr, nullptr);
+        }
         d.swapChain->Present(1, 0);
     }
 }
+
+void D3D11Device::Resize(u32 width, u32 height) {
+    Impl& d = *impl_;
+    if (!d.swapChain || !width || !height || (width == d.windowWidth && height == d.windowHeight)) return;
+    d.windowRtv.Reset();                              // (ResizeBuffers needs every reference to the buffers gone)
+    d.ctx->OMSetRenderTargets(0, nullptr, nullptr);
+    if (SUCCEEDED(d.swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0)))
+        d.windowWidth = width, d.windowHeight = height;
+}
+
+void D3D11Device::SetFilter(Filter filter) { impl_->filter = filter; }
 
 void D3D11Device::DrawVertices(u32 primitive, u32 start, u32 count) {
     XD3DDevice::DrawVertices(primitive, start, count);

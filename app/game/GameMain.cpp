@@ -3,8 +3,13 @@
 // the decompiled renderer (render/nixbox NiXBoxRenderer on the D3D11 backend of its D3D8 stream), the controller on
 // port 0 (or the keyboard: Window's KeyboardGamepad).
 //
-//   fut_game <iso-or-folder> [--size WxH] [--saves <dir>]
+//   fut_game <iso-or-folder> [--size WxH] [--windowed | --fullscreen] [--filter linear|nearest] [--saves <dir>]
 //   fut_game                       (no arguments, e.g. double-clicked: platform/win32/Launcher.h finds the disc)
+//
+// The picture: the game renders the Xbox's 640 x 480 frame, which the device draws into the largest 4:3 rectangle of
+// the window, centred, black either side (render/xd3d/D3D11Device.h: Swap), scaled with a bilinear filter (--filter
+// nearest: unfiltered pixels). The window starts borderless full screen on its monitor; Alt+Enter toggles a window
+// of the windowed size (--size WxH, default 1280x960; --size or --windowed start windowed; platform/win32/Window.h).
 //
 // The release build is a Windows-subsystem program (no console window when double-clicked; started from a terminal
 // it writes to that terminal); its errors also go to message boxes.
@@ -87,6 +92,7 @@ bool CheckDisc(const std::string& source, std::string& error) {
 }  // namespace
 
 int main(int argc, char** argv) {
+    platform::Window::SetDpiAware();                  // (before the launcher's dialog and the window)
     const bool boxes = platform::SetUpConsole();      // (the release build: errors in message boxes too)
     auto fail = [&](const std::string& text, int rc) {
         std::fprintf(stderr, "%s\n", text.c_str());
@@ -95,16 +101,26 @@ int main(int argc, char** argv) {
     };
     std::string source = argc >= 2 ? argv[1] : platform::FindDisc(CheckDisc);   // the disc image / folder
     if (argc < 2 && source.empty()) {                 // (no argument and the dialog cancelled)
-        std::fprintf(stderr, "usage: fut_game <iso-or-folder> [--size WxH] [--saves <dir>]");
+        std::fprintf(stderr, "usage: fut_game <iso-or-folder> [--size WxH] [--windowed | --fullscreen]"
+                             " [--filter linear|nearest] [--saves <dir>]");
         std::fputs("\n", stderr);
         return 2;
     }
-    u32 width = 1280, height = 960;
+    u32 width = 1280, height = 960;                   // the windowed size (--size WxH)
+    bool fullscreen = true;                           // (--size / --windowed: a window; --fullscreen: full screen)
+    render::xd3d::D3D11Device::Filter filter = render::xd3d::D3D11Device::Filter::Linear;   // (--filter)
     std::filesystem::path saveDir = SaveFolder();     // (--saves <dir>)
     for (int i = 2; i < argc; ++i) {
         const std::string a = argv[i];
-        if (a == "--size" && i + 1 < argc) std::sscanf(argv[++i], "%ux%u", &width, &height);
-        else if (a == "--saves" && i + 1 < argc) saveDir = argv[++i];
+        if (a == "--size" && i + 1 < argc) std::sscanf(argv[++i], "%ux%u", &width, &height), fullscreen = false;
+        else if (a == "--windowed") fullscreen = false;
+        else if (a == "--fullscreen") fullscreen = true;
+        else if (a == "--filter" && i + 1 < argc) {
+            const std::string f = argv[++i];
+            if (f == "nearest") filter = render::xd3d::D3D11Device::Filter::Nearest;
+            else if (f == "linear") filter = render::xd3d::D3D11Device::Filter::Linear;
+            else return fail("--filter takes linear or nearest", 2);
+        } else if (a == "--saves" && i + 1 < argc) saveDir = argv[++i];
         else {
             return fail(std::string("unknown option (or its value missing): ") + argv[i], 2);
         }
@@ -121,9 +137,10 @@ int main(int argc, char** argv) {
     }
     const std::vector<u8>& xbeFile = xbe::GameImage().Bytes();
     platform::Window window;
-    if (!window.Create("Futurama", width, height, true)) return fail("window creation failed", 1);
+    if (!window.Create("Futurama", width, height, true, fullscreen)) return fail("window creation failed", 1);
     render::xd3d::D3D11Device device;                 // the decompiled renderer's D3D8 stream, executed
     if (!device.Init(window.Handle(), error)) return fail(error, 1);
+    device.SetFilter(filter);
     render::nixbox::NiXBoxRenderer renderer(device);  // the factory 0x0014C200 (App+0x104)
     platform::XInputPads xinput;
     input::GamepadState pad0{};
@@ -182,6 +199,7 @@ int main(int argc, char** argv) {
     const char* startLevel = nullptr;                 // (null = the boot)
     if (!app.Init(startLevel)) return fail("App::Init failed", 1);
     for (s32 f = 0; window.Pump(); ++f) {
+        if (window.Resized()) device.Resize(window.Width(), window.Height());   // (the swap chain follows the window)
         xinput.Poll();                                // (Input_Update reads the pads through readPad every step)
         QueryPerformanceCounter(&now);
         app.frame = f;

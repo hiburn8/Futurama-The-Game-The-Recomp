@@ -1,5 +1,7 @@
 // Win32 window + message pump + keyboard / mouse state (Phase 3 platform layer; replaces the Xbox's fixed video
 // output). Input for the game proper goes through XInput / Raw Input later; this is enough for the tools.
+// Full screen is the borderless kind (a popup window the size of its monitor, never DXGI's exclusive mode), toggled
+// by Alt+Enter; the picture's fit into the client area is the device's (render/xd3d/D3D11Device.h: Swap).
 #pragma once
 
 #include "core/Types.h"
@@ -17,7 +19,15 @@ public:
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
 
-    bool Create(const std::string& title, u32 width, u32 height, bool visible);
+    // A window with a client area of width x height (the windowed size; `fullscreen`: shown full screen instead).
+    bool Create(const std::string& title, u32 width, u32 height, bool visible, bool fullscreen = false);
+    // Borderless full screen on the window's monitor, or back to the windowed size and place (Alt+Enter does this;
+    // Resized() reports the change).
+    void SetFullscreen(bool on);
+    bool Fullscreen() const { return fullscreen_; }
+    // Per-monitor DPI awareness for the process: call before any window (the launcher's dialog too), so the client
+    // area is in physical pixels and Windows never scales the picture itself.
+    static void SetDpiAware();
     // Handles pending messages; false once the window was closed.
     bool Pump();
     HWND__* Handle() const { return hwnd_; }
@@ -37,6 +47,8 @@ private:
     HWND__* hwnd_ = nullptr;
     u32 width_ = 0, height_ = 0;
     bool resized_ = false, closed_ = false;
+    bool fullscreen_ = false;
+    s32 windowed_[4] = {};                            // the windowed rectangle (left, top, right, bottom) while full screen
     bool keys_[256] = {};
     bool pressed_[256] = {};
     bool looking_ = false;
