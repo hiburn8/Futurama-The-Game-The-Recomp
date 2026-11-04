@@ -37,8 +37,17 @@ Built it yourself? Double-click works the same, or point it straight at your dis
 build\Release\FuturamaRecomp.exe <your futurama.iso or extracted folder>
 ```
 
-Add `--size 1920x1080` to change the window size (the default is 1280x960). Saves go to
-`%APPDATA%\FuturamaRecomp\saves`, or wherever you point `--saves`.
+Add `--size 1920x1080` to change the window size (the default is 1280x960). `--render-scale` independently selects
+the internal 4:3 rendering resolution: `1` is the original 640x480, `2` is 1280x960, `3` is 1920x1440, `4` is
+2560x1920 and `4.5` is 2880x2160. Scales above 1 fit the image to the output without changing its aspect ratio,
+including after a window resize. Scaled output requires at least 1280x800 and stays within a 3840x2160 pixel budget;
+scale 1 preserves the original rendering and presentation. For example:
+
+```
+build\Release\FuturamaRecomp.exe <your futurama.iso or extracted folder> --size 3840x2160 --render-scale 4.5
+```
+
+Saves go to `%APPDATA%\FuturamaRecomp\saves`, or wherever you point `--saves`.
 
 An Xbox controller just works. No controller? The keyboard does it too:
 

@@ -3,7 +3,7 @@
 // the decompiled renderer (render/nixbox NiXBoxRenderer on the D3D11 backend of its D3D8 stream), the controller on
 // port 0 (or the keyboard: Window's KeyboardGamepad).
 //
-//   fut_game <iso-or-folder> [--size WxH] [--saves <dir>]
+//   fut_game <iso-or-folder> [--size WxH] [--render-scale 1|2|3|4|4.5] [--saves <dir>]
 //   fut_game                       (no arguments, e.g. double-clicked: platform/win32/Launcher.h finds the disc)
 //
 // The release build is a Windows-subsystem program (no console window when double-clicked; started from a terminal
@@ -95,20 +95,36 @@ int main(int argc, char** argv) {
     };
     std::string source = argc >= 2 ? argv[1] : platform::FindDisc(CheckDisc);   // the disc image / folder
     if (argc < 2 && source.empty()) {                 // (no argument and the dialog cancelled)
-        std::fprintf(stderr, "usage: fut_game <iso-or-folder> [--size WxH] [--saves <dir>]");
+        std::fprintf(stderr, "usage: fut_game <iso-or-folder> [--size WxH] [--render-scale 1|2|3|4|4.5] [--saves <dir>]");
         std::fputs("\n", stderr);
         return 2;
     }
     u32 width = 1280, height = 960;
+    u32 sceneWidth = 640, sceneHeight = 480;
+    bool renderScaleSeen = false;
     std::filesystem::path saveDir = SaveFolder();     // (--saves <dir>)
     for (int i = 2; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--size" && i + 1 < argc) std::sscanf(argv[++i], "%ux%u", &width, &height);
         else if (a == "--saves" && i + 1 < argc) saveDir = argv[++i];
-        else {
+        else if (a == "--render-scale") {
+            if (renderScaleSeen) return fail("duplicate option: --render-scale", 2);
+            renderScaleSeen = true;
+            if (i + 1 >= argc) return fail("unknown option (or its value missing): " + a, 2);
+            const std::string value = argv[++i];
+            if (value == "1") sceneWidth = 640, sceneHeight = 480;
+            else if (value == "2") sceneWidth = 1280, sceneHeight = 960;
+            else if (value == "3") sceneWidth = 1920, sceneHeight = 1440;
+            else if (value == "4") sceneWidth = 2560, sceneHeight = 1920;
+            else if (value == "4.5") sceneWidth = 2880, sceneHeight = 2160;
+            else return fail("unsupported render scale (expected 1, 2, 3, 4 or 4.5): " + value, 2);
+        } else {
             return fail(std::string("unknown option (or its value missing): ") + argv[i], 2);
         }
     }
+    const bool scaled = sceneWidth != 640;
+    if (scaled && (width < 1280 || height < 800 || u64(width) * height > u64(3840) * 2160))
+        return fail("scaled output requires at least 1280x800 and at most the 3840x2160 pixel budget", 2);
     std::string error;
     fs::Vfs vfs;
     if (!vfs.Open(source, error)) return fail(source + ": " + error, 1);
@@ -123,7 +139,9 @@ int main(int argc, char** argv) {
     platform::Window window;
     if (!window.Create("Futurama", width, height, true)) return fail("window creation failed", 1);
     render::xd3d::D3D11Device device;                 // the decompiled renderer's D3D8 stream, executed
-    if (!device.Init(window.Handle(), error)) return fail(error, 1);
+    if (!device.Init(window.Handle(), error, scaled)) return fail(error, 1);
+    if (scaled && !device.SetPresentationSize(width, height)) return fail("presentation size setup failed", 1);
+    if (scaled && !device.SetSceneResolution(sceneWidth, sceneHeight, error)) return fail(error, 1);
     render::nixbox::NiXBoxRenderer renderer(device);  // the factory 0x0014C200 (App+0x104)
     platform::XInputPads xinput;
     input::GamepadState pad0{};
@@ -182,6 +200,12 @@ int main(int argc, char** argv) {
     const char* startLevel = nullptr;                 // (null = the boot)
     if (!app.Init(startLevel)) return fail("App::Init failed", 1);
     for (s32 f = 0; window.Pump(); ++f) {
+        if (scaled && window.Resized()) {
+            const u32 outputWidth = window.Width(), outputHeight = window.Height();
+            if (outputWidth < 1280 || outputHeight < 800 || u64(outputWidth) * outputHeight > u64(3840) * 2160)
+                return fail("resized output outside the supported 1280x800..3840x2160 bounds", 1);
+            if (!device.SetPresentationSize(outputWidth, outputHeight)) return fail("presentation resize failed", 1);
+        }
         xinput.Poll();                                // (Input_Update reads the pads through readPad every step)
         QueryPerformanceCounter(&now);
         app.frame = f;

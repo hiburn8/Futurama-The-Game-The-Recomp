@@ -20,6 +20,7 @@
 #include <cstring>
 #include <map>
 #include <set>
+#include <stdexcept>
 #include <unordered_map>
 
 namespace fut::render::xd3d {
@@ -304,6 +305,16 @@ float4 ClearVS(uint id : SV_VertexID) : SV_Position {
     return float4(p, clearZ.x, 1);
 }
 float4 ClearPS() : SV_Target { return clearColor; }
+
+// Separate host-output pass: source image remains the game's original render target.
+struct PresentVertex { float4 position : SV_POSITION; float2 uv : TEXCOORD0; };
+PresentVertex PresentVS(uint id : SV_VertexID) {
+    PresentVertex v;
+    v.uv = float2((id << 1) & 2, id & 2);
+    v.position = float4(v.uv.x * 2 - 1, 1 - v.uv.y * 2, 0, 1);
+    return v;
+}
+float4 PresentPS(PresentVertex v) : SV_TARGET { return tex0.Sample(samp0, v.uv); }
 )";
 
 struct LightCB {
@@ -475,6 +486,15 @@ struct D3D11Device::Impl {
     ComPtr<ID3D11DeviceContext> ctx;
     ComPtr<ID3D11DeviceContext1> ctx1;
     ComPtr<IDXGISwapChain> swapChain;
+    bool fitOutput = false;
+    u32 sceneWidth = 640, sceneHeight = 480;
+    Resource* sceneColor = nullptr;
+    Resource* sceneDepth = nullptr;
+    ComPtr<ID3D11DeviceContext> presentation;
+    ComPtr<ID3D11VertexShader> presentVs;
+    ComPtr<ID3D11PixelShader> presentPs;
+    ComPtr<ID3D11SamplerState> presentSampler;
+    ComPtr<ID3D11RasterizerState> presentRaster;
     ComPtr<ID3D11VertexShader> vs, clearVs;
     ComPtr<ID3D11PixelShader> ps, clearPs;
     ComPtr<ID3D11InputLayout> layout;
@@ -485,7 +505,8 @@ struct D3D11Device::Impl {
         ComPtr<ID3D11RenderTargetView> rtv;
         ComPtr<ID3D11DepthStencilView> dsv;
         ComPtr<ID3D11ShaderResourceView> srv;
-        u32 width = 0, height = 0;
+        u32 width = 0, height = 0;                    // game-facing logical dimensions
+        u32 physicalWidth = 0, physicalHeight = 0;
     };
     std::unordered_map<const Resource*, Target> targets;   // render targets (the back buffer, rendered textures)
     struct Tex {
@@ -502,6 +523,7 @@ struct D3D11Device::Impl {
     std::vector<CVertex> verts;
     std::vector<u32> idx;
 
+    bool MakeTarget(Resource* r, bool depth, u32 physicalWidth, u32 physicalHeight, Target& target);
     Target* ColorTarget(Resource* r);
     Target* DepthTarget(Resource* r);
     ID3D11ShaderResourceView* Texture(Resource* r);
@@ -512,14 +534,17 @@ struct D3D11Device::Impl {
 D3D11Device::D3D11Device() : impl_(std::make_unique<Impl>()) {}
 D3D11Device::~D3D11Device() = default;
 
-bool D3D11Device::Init(HWND__* window, std::string& error) {
+bool D3D11Device::Init(HWND__* window, std::string& error, bool fitOutput) {
     Impl& d = *impl_;
+    d.fitOutput = fitOutput;
+    d.sceneColor = backBuffer();
+    d.sceneDepth = depthBuffer();
     const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0};
     HRESULT hr;
     if (window) {
         DXGI_SWAP_CHAIN_DESC sd = {};
         sd.BufferCount = 2;
-        sd.BufferDesc.Width = 640, sd.BufferDesc.Height = 480;
+        sd.BufferDesc.Width = fitOutput ? 1280 : 640, sd.BufferDesc.Height = fitOutput ? 960 : 480;
         sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
         sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
         sd.OutputWindow = window;
@@ -548,14 +573,38 @@ bool D3D11Device::Init(HWND__* window, std::string& error) {
                 (errors ? static_cast<const char*>(errors->GetBufferPointer()) : "unknown");
         return false;
     };
-    ComPtr<ID3DBlob> vsb, psb, cvb, cpb;
+    ComPtr<ID3DBlob> vsb, psb, cvb, cpb, pvb, ppb;
     if (!compile("VSMain", "vs_4_0", vsb) || !compile("PSMain", "ps_4_0", psb) || !compile("ClearVS", "vs_4_0", cvb) ||
         !compile("ClearPS", "ps_4_0", cpb))
         return false;
-    d.device->CreateVertexShader(vsb->GetBufferPointer(), vsb->GetBufferSize(), nullptr, &d.vs);
-    d.device->CreatePixelShader(psb->GetBufferPointer(), psb->GetBufferSize(), nullptr, &d.ps);
-    d.device->CreateVertexShader(cvb->GetBufferPointer(), cvb->GetBufferSize(), nullptr, &d.clearVs);
-    d.device->CreatePixelShader(cpb->GetBufferPointer(), cpb->GetBufferSize(), nullptr, &d.clearPs);
+    auto check = [&](HRESULT result, const char* operation) {
+        if (SUCCEEDED(result)) return true;
+        char code[32];
+        std::snprintf(code, sizeof code, " (0x%08lX)", static_cast<unsigned long>(result));
+        error = std::string(operation) + code;
+        return false;
+    };
+    if (fitOutput) {
+        if (!compile("PresentVS", "vs_4_0", pvb) || !compile("PresentPS", "ps_4_0", ppb)) return false;
+        if (!check(d.device->CreateVertexShader(pvb->GetBufferPointer(), pvb->GetBufferSize(), nullptr, &d.presentVs),
+                   "presentation vertex shader creation failed") ||
+            !check(d.device->CreatePixelShader(ppb->GetBufferPointer(), ppb->GetBufferSize(), nullptr, &d.presentPs),
+                   "presentation pixel shader creation failed") ||
+            !check(d.device->CreateDeferredContext(0, &d.presentation), "presentation context creation failed")) return false;
+        D3D11_SAMPLER_DESC sampler{};
+        sampler.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+        sampler.MaxLOD = D3D11_FLOAT32_MAX;
+        sampler.ComparisonFunc = D3D11_COMPARISON_NEVER;
+        D3D11_RASTERIZER_DESC raster{};
+        raster.FillMode = D3D11_FILL_SOLID; raster.CullMode = D3D11_CULL_NONE; raster.DepthClipEnable = TRUE;
+        if (!check(d.device->CreateSamplerState(&sampler, &d.presentSampler), "presentation sampler creation failed") ||
+            !check(d.device->CreateRasterizerState(&raster, &d.presentRaster), "presentation raster creation failed")) return false;
+    }
+    if (!check(d.device->CreateVertexShader(vsb->GetBufferPointer(), vsb->GetBufferSize(), nullptr, &d.vs), "vertex shader creation failed")) return false;
+    if (!check(d.device->CreatePixelShader(psb->GetBufferPointer(), psb->GetBufferSize(), nullptr, &d.ps), "pixel shader creation failed")) return false;
+    if (!check(d.device->CreateVertexShader(cvb->GetBufferPointer(), cvb->GetBufferSize(), nullptr, &d.clearVs), "clear vertex shader creation failed")) return false;
+    if (!check(d.device->CreatePixelShader(cpb->GetBufferPointer(), cpb->GetBufferSize(), nullptr, &d.clearPs), "clear pixel shader creation failed")) return false;
     const D3D11_INPUT_ELEMENT_DESC il[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(CVertex, pos), D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(CVertex, nrm), D3D11_INPUT_PER_VERTEX_DATA, 0},
@@ -588,37 +637,40 @@ bool D3D11Device::Init(HWND__* window, std::string& error) {
     return d.ColorTarget(backBuffer()) && d.DepthTarget(depthBuffer());
 }
 
+bool D3D11Device::Impl::MakeTarget(Resource* resource, bool depth, u32 physicalWidth, u32 physicalHeight, Target& target) {
+    target.width = std::max(resource->width, 1u);
+    target.height = std::max(resource->height, 1u);
+    target.physicalWidth = physicalWidth;
+    target.physicalHeight = physicalHeight;
+    D3D11_TEXTURE2D_DESC desc{};
+    desc.Width = target.physicalWidth; desc.Height = target.physicalHeight;
+    desc.MipLevels = desc.ArraySize = desc.SampleDesc.Count = 1;
+    desc.Format = depth ? DXGI_FORMAT_D24_UNORM_S8_UINT : DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.BindFlags = depth ? D3D11_BIND_DEPTH_STENCIL : D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    if (FAILED(device->CreateTexture2D(&desc, nullptr, &target.tex))) return false;
+    if (depth) return SUCCEEDED(device->CreateDepthStencilView(target.tex.Get(), nullptr, &target.dsv));
+    return SUCCEEDED(device->CreateRenderTargetView(target.tex.Get(), nullptr, &target.rtv)) &&
+           SUCCEEDED(device->CreateShaderResourceView(target.tex.Get(), nullptr, &target.srv));
+}
+
 D3D11Device::Impl::Target* D3D11Device::Impl::ColorTarget(Resource* r) {
     if (!r) return nullptr;
-    Resource* key = r->parent ? r->parent : r;        // a texture's surface: the texture
-    auto it = targets.find(key);
-    if (it != targets.end()) return &it->second;
-    Target t;
-    t.width = std::max(key->width, 1u), t.height = std::max(key->height, 1u);
-    D3D11_TEXTURE2D_DESC td = {};
-    td.Width = t.width, td.Height = t.height, td.MipLevels = 1, td.ArraySize = 1;
-    td.Format = DXGI_FORMAT_R8G8B8A8_UNORM, td.SampleDesc.Count = 1;
-    td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-    if (FAILED(device->CreateTexture2D(&td, nullptr, &t.tex)) ||
-        FAILED(device->CreateRenderTargetView(t.tex.Get(), nullptr, &t.rtv)))
-        return nullptr;
-    device->CreateShaderResourceView(t.tex.Get(), nullptr, &t.srv);
-    return &(targets[key] = std::move(t));
+    Resource* key = r->parent ? r->parent : r;
+    if (auto it = targets.find(key); it != targets.end()) return &it->second;
+    Target target;
+    if (!MakeTarget(key, false, key == sceneColor ? sceneWidth : std::max(key->width, 1u),
+                    key == sceneColor ? sceneHeight : std::max(key->height, 1u), target)) return nullptr;
+    return &(targets[key] = std::move(target));
 }
 
 D3D11Device::Impl::Target* D3D11Device::Impl::DepthTarget(Resource* r) {
     if (!r) return nullptr;
-    auto it = targets.find(r);
-    if (it != targets.end()) return &it->second;
-    Target t;
-    t.width = std::max(r->width, 1u), t.height = std::max(r->height, 1u);
-    D3D11_TEXTURE2D_DESC td = {};
-    td.Width = t.width, td.Height = t.height, td.MipLevels = 1, td.ArraySize = 1;
-    td.Format = DXGI_FORMAT_D24_UNORM_S8_UINT, td.SampleDesc.Count = 1, td.BindFlags = D3D11_BIND_DEPTH_STENCIL;
-    if (FAILED(device->CreateTexture2D(&td, nullptr, &t.tex)) ||
-        FAILED(device->CreateDepthStencilView(t.tex.Get(), nullptr, &t.dsv)))
-        return nullptr;
-    return &(targets[r] = std::move(t));
+    Resource* key = r->parent ? r->parent : r;
+    if (auto it = targets.find(key); it != targets.end()) return &it->second;
+    Target target;
+    if (!MakeTarget(key, true, key == sceneDepth ? sceneWidth : std::max(key->width, 1u),
+                    key == sceneDepth ? sceneHeight : std::max(key->height, 1u), target)) return nullptr;
+    return &(targets[key] = std::move(target));
 }
 
 ID3D11ShaderResourceView* D3D11Device::Impl::Texture(Resource* r) {
@@ -739,7 +791,12 @@ void D3D11Device::Clear(u32 count, const D3DRECT* rects, u32 flags, u32 color, f
     const bool whole = r.x1 <= 0 && r.y1 <= 0 && u32(r.x2) >= ct->width && u32(r.y2) >= ct->height;
     if ((flags & 0xF0) && whole) d.ctx->ClearRenderTargetView(ct->rtv.Get(), c);
     else if ((flags & 0xF0) && d.ctx1) {
-        const D3D11_RECT rr{r.x1, r.y1, r.x2, r.y2};
+        // Match raster coverage: include pixel centres on the left/top edge, exclude right/bottom.
+        auto edge = [](s32 value, u32 physical, u32 logical) {
+            return LONG(std::clamp(std::ceil(double(value) * physical / logical - 0.5), 0.0, double(physical)));
+        };
+        const D3D11_RECT rr{edge(r.x1, ct->physicalWidth, ct->width), edge(r.y1, ct->physicalHeight, ct->height),
+                            edge(r.x2, ct->physicalWidth, ct->width), edge(r.y2, ct->physicalHeight, ct->height)};
         d.ctx1->ClearView(ct->rtv.Get(), c, &rr, 1);
     }
     if (!(flags & 3) || !dt) return;
@@ -775,7 +832,7 @@ void D3D11Device::Clear(u32 count, const D3DRECT* rects, u32 flags, u32 color, f
     rd.FillMode = D3D11_FILL_SOLID, rd.CullMode = D3D11_CULL_NONE, rd.DepthClipEnable = FALSE;
     ComPtr<ID3D11RasterizerState> rs;
     d.device->CreateRasterizerState(&rd, &rs);
-    const D3D11_VIEWPORT v{0, 0, f32(ct->width), f32(ct->height), 0, 1};
+    const D3D11_VIEWPORT v{0, 0, f32(ct->physicalWidth), f32(ct->physicalHeight), 0, 1};
     d.ctx->OMSetRenderTargets(1, ct->rtv.GetAddressOf(), dt->dsv.Get());
     d.ctx->RSSetViewports(1, &v);
     d.ctx->RSSetState(rs.Get());
@@ -790,6 +847,98 @@ void D3D11Device::Clear(u32 count, const D3DRECT* rects, u32 flags, u32 color, f
     d.ctx->Draw(4, 0);
 }
 
+bool D3D11Device::SetSceneResolution(u32 width, u32 height, std::string& error) {
+    Impl& d = *impl_;
+    if (!d.device || width < 640 || height < 480 || width > 2880 || height > 2160 ||
+        u64(width) * 3 != u64(height) * 4 ||
+        ((width != 640 || height != 480) && d.swapChain && !d.fitOutput)) {
+        error = "scene raster must be exact 4:3 within 640x480..2880x2160, with fitted window output";
+        return false;
+    }
+    if (width == d.sceneWidth && height == d.sceneHeight) { error.clear(); return true; }
+    // Allocate both first. No cache/binding/scale change is visible on allocation failure.
+    Impl::Target color, depth;
+    if (!d.MakeTarget(d.sceneColor, false, width, height, color) || !d.MakeTarget(d.sceneDepth, true, width, height, depth)) {
+        error = "scene colour/depth allocation failed";
+        return false;
+    }
+    // Init established both entries. Replacing them cannot grow/rehash the cache halfway through publication.
+    auto colorEntry = d.targets.find(d.sceneColor), depthEntry = d.targets.find(d.sceneDepth);
+    if (colorEntry == d.targets.end() || depthEntry == d.targets.end()) {
+        error = "scene target pair is unavailable";
+        return false;
+    }
+    d.ctx->OMSetRenderTargets(0, nullptr, nullptr);
+    ID3D11ShaderResourceView* none[4]{};
+    d.ctx->PSSetShaderResources(0, 4, none);
+    colorEntry->second = std::move(color);
+    depthEntry->second = std::move(depth);
+    d.sceneWidth = width; d.sceneHeight = height;
+    error.clear();
+    return true;
+}
+
+bool D3D11Device::SetPresentationSize(u32 width, u32 height) {
+    Impl& d = *impl_;
+    if (!d.fitOutput) throw std::runtime_error("presentation fitting is not enabled");
+    if (width < 1280 || height < 800 || width > 16384 || height > 16384 ||
+        u64(width) * height > u64(3840) * 2160) return false;
+    if (d.swapChain) {
+        DXGI_SWAP_CHAIN_DESC desc{};
+        if (SUCCEEDED(d.swapChain->GetDesc(&desc)) && desc.BufferDesc.Width == width && desc.BufferDesc.Height == height)
+            return true;
+        d.ctx->OMSetRenderTargets(0, nullptr, nullptr);
+        if (FAILED(d.swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0)))
+            throw std::runtime_error("D3D11 output resize failed");
+    }
+    return true;
+}
+
+void D3D11Device::ComposePresentation(ID3D11RenderTargetView* target) {
+    Impl& d = *impl_;
+    if (!d.fitOutput || !target) throw std::runtime_error("presentation target unavailable");
+    ComPtr<ID3D11Device> targetDevice;
+    target->GetDevice(&targetDevice);
+    D3D11_RENDER_TARGET_VIEW_DESC view{};
+    target->GetDesc(&view);
+    if (targetDevice.Get() != d.device.Get() || view.ViewDimension != D3D11_RTV_DIMENSION_TEXTURE2D ||
+        view.Texture2D.MipSlice != 0)
+        throw std::runtime_error("presentation requires an owned level-zero 2D target");
+    ComPtr<ID3D11Resource> resource;
+    target->GetResource(&resource);
+    ComPtr<ID3D11Texture2D> texture;
+    if (FAILED(resource.As(&texture))) throw std::runtime_error("presentation needs a 2D target");
+    D3D11_TEXTURE2D_DESC desc{};
+    texture->GetDesc(&desc);
+    if (desc.Width < 1280 || desc.Height < 800 || desc.SampleDesc.Count != 1 ||
+        u64(desc.Width) * desc.Height > u64(3840) * 2160)
+        throw std::runtime_error("presentation target outside supported size/sample bounds");
+    auto* source = d.ColorTarget(backBuffer());
+    if (!source || !source->srv) throw std::runtime_error("presentation source unavailable");
+    const float scale = std::min(float(desc.Width) / source->physicalWidth, float(desc.Height) / source->physicalHeight);
+    const float width = source->physicalWidth * scale, height = source->physicalHeight * scale;
+    const D3D11_VIEWPORT viewport{(desc.Width - width) * 0.5f, (desc.Height - height) * 0.5f, width, height, 0, 1};
+    constexpr float black[4]{0, 0, 0, 1};
+    auto* context = d.presentation.Get();
+    context->ClearRenderTargetView(target, black);
+    context->OMSetRenderTargets(1, &target, nullptr);
+    context->OMSetBlendState(nullptr, nullptr, 0xffffffff);
+    context->OMSetDepthStencilState(nullptr, 0);
+    context->RSSetState(d.presentRaster.Get());
+    context->RSSetViewports(1, &viewport);
+    context->IASetInputLayout(nullptr);
+    context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    context->VSSetShader(d.presentVs.Get(), nullptr, 0);
+    context->PSSetShader(d.presentPs.Get(), nullptr, 0);
+    context->PSSetShaderResources(0, 1, source->srv.GetAddressOf());
+    context->PSSetSamplers(0, 1, d.presentSampler.GetAddressOf());
+    context->Draw(3, 0);
+    ComPtr<ID3D11CommandList> commands;
+    if (FAILED(context->FinishCommandList(FALSE, &commands)))
+        throw std::runtime_error("presentation command list failed");
+    d.ctx->ExecuteCommandList(commands.Get(), TRUE);
+}
+
 void D3D11Device::Swap(u32 flags) {
     XD3DDevice::Swap(flags);
     Impl& d = *impl_;
@@ -798,7 +947,16 @@ void D3D11Device::Swap(u32 flags) {
     if (!bb) return;
     if (d.swapChain) {
         ComPtr<ID3D11Texture2D> back;
-        if (SUCCEEDED(d.swapChain->GetBuffer(0, IID_PPV_ARGS(&back)))) d.ctx->CopyResource(back.Get(), bb->tex.Get());
+        if (SUCCEEDED(d.swapChain->GetBuffer(0, IID_PPV_ARGS(&back)))) {
+            if (d.fitOutput) {
+                ComPtr<ID3D11RenderTargetView> target;
+                if (FAILED(d.device->CreateRenderTargetView(back.Get(), nullptr, &target)))
+                    throw std::runtime_error("D3D11 fitted output target unavailable");
+                ComposePresentation(target.Get());
+            } else {
+                d.ctx->CopyResource(back.Get(), bb->tex.Get());
+            }
+        }
         d.swapChain->Present(1, 0);
     }
 }
@@ -1058,7 +1216,9 @@ void D3D11Device::Draw(u32 primitive, const u16* list, u32 count, u32 start) {
     ID3D11ShaderResourceView* none[4] = {};
     d.ctx->PSSetShaderResources(0, 4, none);         // (a texture that is the target is unbound first)
     d.ctx->OMSetRenderTargets(1, ct->rtv.GetAddressOf(), dt ? dt->dsv.Get() : nullptr);
-    const D3D11_VIEWPORT v{f32(viewport.X), f32(viewport.Y), f32(viewport.Width), f32(viewport.Height),
+    // Native RHW coordinates/cb.vp remain logical; only the final hardware viewport grows.
+    const f32 sx = f32(ct->physicalWidth) / ct->width, sy = f32(ct->physicalHeight) / ct->height;
+    const D3D11_VIEWPORT v{viewport.X * sx, viewport.Y * sy, viewport.Width * sx, viewport.Height * sy,
                            viewport.MinZ, viewport.MaxZ};
     d.ctx->RSSetViewports(1, &v);
     d.ctx->RSSetState(rz.Get());
