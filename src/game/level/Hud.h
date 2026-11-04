@@ -37,7 +37,7 @@ class Hud;
 // 0, inserted at the head of the HUD's list +4 (+0x1C next, +0x20 previous)).
 class HudElement {
 public:
-    HudElement(Hud& hud, const char* name);
+    HudElement(Hud& hud, const char* name, ni::HudAnchor anchor = ni::HudAnchor::Center);
     virtual ~HudElement() = default;                  // orig: 0x000E5860 (unlinks itself)
     virtual void Update() {}                          // vf01 (+4)
     virtual void Draw() {}                            // vf02 (+8)
@@ -46,6 +46,7 @@ public:
     virtual void SetActive(bool on) { active = on; }  // vf05 (+0x14; 0x000E5850)
     bool IsActive() const;                            // vf06 (+0x18; 0x000E58B0: +0x15 and the HUD's +0)
     Hud& hud;
+    const ni::HudAnchor anchor;
     char name[16] = {};                               // +0x04
     u8 active = 1;                                    // +0x15
 };
@@ -72,11 +73,11 @@ public:
     // alpha 1) and, with `alpha`, a NiAlphaProperty (0xED), attached to `camera` (null: the scene camera, S+0x8C +0x30).
     ni::NiPointer<ni::NiScreenPolygon> MakePolygon(ni::NiObject* texture, f32 w, f32 h, f32 x, f32 y,
                                                    const ni::NiColor& rgb, bool alpha, const ni::NiPoint2* uvs,
-                                                   ni::NiCamera* camera);
+                                                   ni::NiCamera* camera, ni::HudAnchor anchor = ni::HudAnchor::Center);
     // orig: 0x000E5F60 (element, file, w, h, x, y, alpha, &texturing, &material, uvs, camera): Texture(file), then
     // MakePolygon with the colour (1, 1, 1).
     ni::NiPointer<ni::NiScreenPolygon> MakeIcon(const char* file, f32 w, f32 h, f32 x, f32 y, bool alpha,
-                                                const ni::NiPoint2* uvs, ni::NiCamera* camera);
+                                                const ni::NiPoint2* uvs, ni::NiCamera* camera, ni::HudAnchor anchor = ni::HudAnchor::Center);
     ni::NiCamera* SceneCamera() const;                // S+0x8C +0x30
     LevelData& level;
     u8 enabled = 1;                                   // +0x00

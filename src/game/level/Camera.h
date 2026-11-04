@@ -33,7 +33,7 @@ public:
     void Apply();                                     // orig: 0x00012210 (per rendered frame)
     // orig: 0x00012410 ("cam:click"): NiCamera::Click of the scene camera; the port keeps only the cull pass's
     // counters and render-time side effects (NiCull.h).
-    void Click();
+    void Click(bool gameplayWorld = false);
     // The script natives' set-ups (camera natives 234-239): the FOV lines, the static cameras, the snap behind.
     void ResetFov();                                  // orig: inline in 0x00019110 / 0x00018860 / 0x00018B50
     void SetFov(f32 deg);                             // orig: 0x000110E0 (the level1-6 chicken walker: 50)

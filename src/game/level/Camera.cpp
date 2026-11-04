@@ -296,6 +296,7 @@ Camera::Camera(LevelData& lvl) : level(lvl) {         // orig: 0x00019DB0
         const ni::NiColorA c{fadeColor[0], fadeColor[1], fadeColor[2], fadeColor[3]};
         const ni::NiColorA cs[4] = {c, c, c, c};
         fadePolygon = new ni::NiScreenPolygon(4, v, nullptr, cs);
+        fadePolygon->fullScene = true; // authored whole-scene fade, not HUD
         overlayCamera->AttachScreenPolygon(fadePolygon.Get());   // 0x00019460
         fadeAttached = 1;
         auto* vc = new ni::NiVertexColorProperty;
@@ -1529,8 +1530,9 @@ void Camera::SetFogRelativeNode(const char* name, const char* child, f32 offset)
     SetFogDistance(FogNodeDistance(*n, position, offset));
 }
 
-void Camera::Click() {                                // orig: 0x00012410
-    if (sceneCamera && level.scene) ni::VisitForCulling(*sceneCamera, level.scene.Get());   // the scene root S+0x18
+void Camera::Click(bool gameplayWorld) {               // orig: 0x00012410
+    if (sceneCamera && level.scene) ni::VisitForCulling(*sceneCamera, level.scene.Get(),
+        gameplayWorld ? ni::CameraRole::GameplayWorld : ni::CameraRole::Original);   // the scene root S+0x18
 }
 
 void Camera::Apply() {                                // orig: 0x00012210

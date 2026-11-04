@@ -47,6 +47,18 @@ scale 1 preserves the original rendering and presentation. For example:
 build\Release\FuturamaRecomp.exe <your futurama.iso or extracted folder> --size 3840x2160 --render-scale 4.5
 ```
 
+For opt-in Hor+ widescreen, add `--widescreen on` and use exactly one of `1280x800`, `1920x1080`, `1920x1200`,
+`2560x1440` or `3840x2160`:
+
+```
+build\Release\FuturamaRecomp.exe <your futurama.iso or extracted folder> --size 1920x1080 --widescreen on
+```
+
+Widescreen renders at the output resolution, keeps vertical framing, expands gameplay and frontend views horizontally,
+and anchors the HUD to the output edges without changing its scale. Movies and 4:3 loading artwork stay aspect-correct.
+Window resizes are accepted only at those five sizes. Widescreen cannot be combined with `--render-scale` above 1;
+without either feature, the original 4:3 camera and presentation are unchanged.
+
 Saves go to `%APPDATA%\FuturamaRecomp\saves`, or wherever you point `--saves`.
 
 An Xbox controller just works. No controller? The keyboard does it too:

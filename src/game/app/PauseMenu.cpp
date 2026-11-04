@@ -101,6 +101,7 @@ void PauseMenu::Build() {                             // orig: 0x000A8640
     options->node = FindAs<ni::NiNode>(scene.Get(), "options1");  // +0xC
     options->Build(camera.Get(), scene.Get());        // vf28 0x000279C0(scene, camera) (its Reset 0x000A7F50: two draws)
     fade = FindAs<ni::NiTriShape>(scene.Get(), "fade1Shape");   // +0x40
+    if (fade) fade->fullScene = true; // only this authored pause dimmer fills the scene
     if (auto* l = FindAs<ni::NiNode>(scene.Get(), "pointLight4")) root->AttachChild(l, true);
     if (auto* l = FindAs<ni::NiNode>(scene.Get(), "pointLight3")) root->AttachChild(l, true);
     camNull = FindAs<ni::NiNode>(scene.Get(), "camnull");   // +0x4C

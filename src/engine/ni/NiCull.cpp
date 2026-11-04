@@ -86,6 +86,21 @@ bool NiCamera::WorldPtToScreenPt(const NiPoint3& p, f32& x, f32& y) const {   //
     return true;
 }
 
+bool NiCamera::WorldPtToGameplayScreenPt(const NiPoint3& p, f32& x, f32& y) const {
+    const float expansion = HudExpansion(renderer ? renderer->GameplayAspect() : 4.0f / 3.0f);
+    if (expansion == 1.0f) return WorldPtToScreenPt(p, x, y);
+    NiCamera display;
+    display.world = world;
+    display.worldDir = worldDir; display.worldUp = worldUp; display.worldRight = worldRight;
+    std::copy_n(port, 4, display.port);
+    std::copy_n(frustum, 6, display.frustum);
+    const double center = (double(frustum[0]) + frustum[1]) * 0.5;
+    const double half = (double(frustum[1]) - frustum[0]) * 0.5 * expansion;
+    display.frustum[0] = F(center - half); display.frustum[1] = F(center + half);
+    display.UpdateProjection();
+    return display.WorldPtToScreenPt(p, x, y);
+}
+
 void NiCamera::UpdateProjection() {                   // orig: 0x000FF430 (x87 order; T = the world translate)
     const NiPoint3& T = world.translate;
     const NiPoint3& D = worldDir;                     // +0x110
@@ -185,8 +200,53 @@ void NiCullPass::Cull(NiAVObject* o) {                // orig: 0x00101AC0
     active = savedActive;
 }
 
-void VisitForCulling(NiCamera& camera, NiAVObject* scene) {   // orig: NiCamera::Click 0x00100CE0
+namespace {
+class CameraAspectScope {
+    NiCamera& camera_;
+    NiRenderer* renderer_;
+    f32 saved_[6], authored_[6];
+    CameraAspectScope* previous_;
+    bool oldWorld_ = false, active_ = false;
+    inline static thread_local CameraAspectScope* top_ = nullptr;
+public:
+    CameraAspectScope(NiCamera& camera, CameraRole role) : camera_(camera), renderer_(camera.renderer), previous_(top_) {
+        std::copy_n(camera.frustum, 6, saved_);
+        const float aspect = renderer_ ? renderer_->GameplayAspect() : 4.0f / 3.0f;
+        // Even an auxiliary RT nested in a wide pass must scope its original camera/viewport.
+        active_ = renderer_ && (aspect > 4.0f / 3.0f || top_);
+        if (!active_) return;
+        renderer_->PushCameraPass();
+        const bool wideScene = role == CameraRole::GameplayWorld || role == CameraRole::FrontendScene;
+        // This renderer flag owns full-width geometry/outline mapping, not native game status.
+        oldWorld_ = renderer_->SetGameplayWorld(wideScene);
+        const f32* authored = saved_;
+        for (auto* p = previous_; p; p = p->previous_) if (&p->camera_ == &camera_) authored = p->saved_;
+        std::copy_n(authored, 6, authored_);
+        std::copy_n(authored_, 6, camera_.frustum);
+        if (wideScene && aspect > 4.0f / 3.0f) {
+            const double center = (double(authored[0]) + authored[1]) * 0.5;
+            const double half = (double(authored[1]) - authored[0]) * 0.5 * (aspect / (4.0 / 3.0));
+            camera_.frustum[0] = F(center - half); camera_.frustum[1] = F(center + half);
+        }
+        camera_.NiCamera::UpdateWorldData(); top_ = this;
+    }
+    void Hud() {
+        if (!active_) return;
+        std::copy_n(authored_, 6, camera_.frustum); camera_.NiCamera::UpdateWorldData();
+        renderer_->SetGameplayWorld(false);
+        renderer_->SetCameraData(camera_.world.translate, camera_.worldDir, camera_.worldUp, camera_.worldRight,
+                                 camera_.frustum, camera_.port);
+    }
+    ~CameraAspectScope() {
+        if (!active_) return;
+        std::copy_n(saved_, 6, camera_.frustum); camera_.NiCamera::UpdateWorldData();
+        top_ = previous_; renderer_->SetGameplayWorld(oldWorld_); renderer_->PopCameraPass();
+    }
+};
+}
+void VisitForCulling(NiCamera& camera, NiAVObject* scene, CameraRole role) {   // orig: NiCamera::Click 0x00100CE0
     NiRenderer* r = camera.renderer;
+    CameraAspectScope aspect(camera, role);
     if (!r) {                                         // (the fake renderer: no display, the counters only)
         if (!scene || !scene->IsVisualObject()) return;   // scene->vf70 (NiNode: flags & 0x0100)
         NiCullPass pass(camera);
@@ -217,6 +277,7 @@ void VisitForCulling(NiCamera& camera, NiAVObject* scene) {   // orig: NiCamera:
         }
         // 0x00100E6A: the objects of +0x17C (vf84 with the camera, then removed): none is ever added (L)
     }
+    aspect.Hud(); // world-generated drawOnce outline polygons above keep the world mapping
     // 0x00100F0D: the screen textures (+0x194, count +0x19C, the size re-read every iteration): 0x0010B000 ->
     // renderer vfDC
     for (size_t i = 0; i < camera.screenTextureList.size(); ++i)

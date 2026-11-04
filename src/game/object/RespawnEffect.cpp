@@ -3,6 +3,7 @@
 // 0x00070120, 0x0006FF40, 0x00070070 and 0x0006FE90 (2026-10-18). The charge-up effect: from 0x00066290, 0x000660E0,
 // 0x00066380, 0x000661E0, 0x00065E60 and 0x00066150 (2026-10-18).
 #include "game/object/RespawnEffect.h"
+#include "engine/ni/NiRenderer.h"
 
 #include "engine/ni/NiClone.h"
 #include "engine/ni/NiMath.h"
@@ -307,13 +308,22 @@ bool ChargeUpEffect::Init() {                         // orig: vf04 0x00066380
     const f32 h = F(double(size) * Bits(0x3B088889u));   // FMUL [0x0029BC14] (1 / 480)
     slot = d.slot;                                    // +0x74 = D+0x2C
     const ni::NiPoint2 uv[4] = {{0.0f, 1.0f}, {1.0f, 1.0f}, {1.0f, 0.0f}, {0.0f, 0.0f}};
-    (void)cam->WorldPtToScreenPt(d.pos, x, y);        // 0x000FEB10(D+0x20, +0x48, +0x4C) (the result unused)
+    const float expansion = ni::HudExpansion(cam->renderer ? cam->renderer->GameplayAspect() : 4.0f / 3.0f);
+    if (expansion == 1.0f) {
+        (void)cam->WorldPtToScreenPt(d.pos, x, y);    // native path, including its original rounding
+    } else {
+        (void)cam->WorldPtToGameplayScreenPt(d.pos, x, y);
+        // Keep animation coordinates in the height-scaled native canvas. Its extended
+        // horizontal range covers the whole output without clipping or stretching.
+        x = F(0.5 + (double(x) - 0.5) * expansion);
+    }
     const double x0 = double(x) - double(size) * Bits(0x3A4CCCCDu);   // FMUL [0x0029BC20]; FSUBP
     const double y0 = double(size) * Bits(0x3A888889u) + y;           // FMUL [0x0029BC1C]; FADD
     const double y1 = y0 - h;                         // FSUBR
     const double x1 = x0 + w;
     const NiPoint3 v[4] = {{F(x0), F(y1), 0.0f}, {F(x1), F(y1), 0.0f}, {F(x1), F(y0), 0.0f}, {F(x0), F(y0), 0.0f}};
     polygon = new ni::NiScreenPolygon(4, v, uv, nullptr);   // new(0x24) 0x00106DE0
+    polygon->hudFlight = true;
     {                                                 // new(0x3C) 0x00109DC0: SetBaseTexture(D+0x18) 0x0001D610, apply
         ni::NiPointer<ni::NiTexturingProperty> tex = MakeTexturing(d.texture.Get());   // mode 2, filter 1 (0x0001D6B0)
         polygon->AttachProperty(tex.Get());           // (the polygon's property state, vf2C's slot)
@@ -342,7 +352,10 @@ bool ChargeUpEffect::Init() {                         // orig: vf04 0x00066380
 }
 
 bool ChargeUpEffect::Move(f32 rate) {                 // orig: 0x00065E60
-    const auto& t = slots[slot];                      // +0x50 + 8 * +0x74
+    auto t = slots[slot];                            // +0x50 + 8 * +0x74
+    const auto* renderer = level.renderer;
+    const float aspect = renderer ? renderer->GameplayAspect() : 4.0f / 3.0f;
+    t[0] = ni::HudAnchoredX(t[0], ni::HudAnchor::Left, aspect);
     if (!(double(t[0]) + 0.01f < x)) return true;     // FADD [0x00293AAC]; FCOMP +0x48; TEST AH,1; JNE (NaN: here)
     x = F(double(x) - (double(x) - t[0]) * rate * 0.1f);   // FSUB; FMUL rate; FMUL [0x00293AB0]; FSUBR; FSTP
     const double ny = double(y) - (double(y) - t[1]) * rate * 0.1f;

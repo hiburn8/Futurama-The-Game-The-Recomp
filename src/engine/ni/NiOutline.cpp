@@ -4,6 +4,7 @@
 // outline screen polygons 0x0013D440 / 0x0013E3F0 / 0x0013CEF0 / 0x0013C7E0 (renderer_lighting_port.md 8.2,
 // renderer_plan.md 16). The x87 evaluation order is the original's (double intermediates, F() at the stores).
 #include "engine/ni/NiCull.h"
+#include "engine/ni/NiRenderer.h"
 
 #include "core/CrtQsort.h"
 #include "engine/ni/NiMath.h"
@@ -459,6 +460,9 @@ void NiOutline::DrawSilhouette(NiCamera& cam) {       // orig: 0x00153F20
         for (int j = 4; j < 7; ++j) d.edges[s16(face.v[j])].flags = static_cast<u16>(d.edges[s16(face.v[j])].flags + add);
     }
     for (auto& e : d.edges) e.flags = g_classify[static_cast<u8>(s16(e.flags))];   // (movsx index, movzx byte)
+    // Run the original line/miter algorithm in its native horizontal metric,
+    // then map the resulting vertices back. This preserves thickness, not just centres.
+    const f32 expansion = cam.renderer ? cam.renderer->OutlineExpansion() : 1.0f;
     const f32 kx = F((double(kLineWidth) / (double(cam.port[1]) - cam.port[0])) * kAspect);   // cam+0x150 - +0x14C
     const f32 ky = F(double(kLineWidth) / (double(cam.port[2]) - cam.port[3]));              // cam+0x154 - +0x158
     f32 M[16];                                        // the 16 words of cam+0xC4
@@ -489,6 +493,7 @@ void NiOutline::DrawSilhouette(NiCamera& cam) {       // orig: 0x00153F20
             for (u16 e : d.lists[v]) d.edges[e].flags &= 0x70;
         } else {
             P[v] = q;
+            if (expansion != 1.0f) P[v].x = F((double(q.x) - 0.5) * expansion + 0.5);
         }
     }
     // the chains: from each silhouette edge left (in edge order) forward from its second vertex (records 51..99)
@@ -582,6 +587,10 @@ void NiOutline::DrawSilhouette(NiCamera& cam) {       // orig: 0x00153F20
             const ChainRecord& r = rec[i];
             V[k] = {r.a[0], r.a[1], F(double(r.a[2]) - kDepthBias)};
             V[k + 1] = {r.b[0], r.b[1], F(double(r.b[2]) - kDepthBias)};
+            if (expansion != 1.0f) {
+                V[k].x = F((double(V[k].x) - 0.5) / expansion + 0.5);
+                V[k + 1].x = F((double(V[k + 1].x) - 0.5) / expansion + 0.5);
+            }
             T[k] = {0.5f, 0.0f};
             T[k + 1] = {0.5f, 1.0f};
         }
@@ -591,37 +600,28 @@ void NiOutline::DrawSilhouette(NiCamera& cam) {       // orig: 0x00153F20
 // ---- the outline polygons ---------------------------------------------------------------------------------------
 void NiOutline::AddPolygonRun(s32 count, u32 r, u32 g, u32 b, NiPoint3** vertices, NiPoint2** uvs,
                               NiColorA** colors) {    // orig: 0x0013D440
+    *vertices = nullptr;
+    *uvs = nullptr;
+    if (colors) *colors = nullptr;
+    // A run is one independent ribbon strip. Never connect it to another chain,
+    // or erase its terminal pair while closing the preceding polygon.
+    if (count < 4 || count > kPolygonVertices || (count & 1)) {
+        NotPorted("NiOutline::AddPolygonRun: invalid ribbon vertex count");
+        return;
+    }
     if (g_polygon) {
-        const s32 cur = g_polygonCount, end = cur + count;
-        if (end <= kPolygonVertices) {
-            auto& c = g_polygon->colors;
-            for (s32 k = 0; k < count - 2; ++k) c[cur + k] = {Bits(r), Bits(g), Bits(b), 1.0f};
-            c[end - 2] = {0, 0, 0, 0};
-            c[end - 1] = {0, 0, 0, 0};
-            g_polygonCount = end;
-            *vertices = &g_polygon->vertices[cur];
-            *uvs = &g_polygon->uvs[cur];
-            if (colors) *colors = &g_polygon->colors[cur];
-            return;
-        }
-        if (g_outlineMode == 2) {                     // full: the rest from the previous run's last two cleared,
-            s32 from = cur - 2;                       //  the polygon attached to the outline's camera
-            if (from < 0) from = 0;
-            for (s32 k = from; k < kPolygonVertices; ++k) {
-                g_polygon->colors[k] = {0, 0, 0, 0};
-                g_polygon->vertices[k] = {0, 0, 0};
-            }
+        if (g_outlineMode == 2 && camera) {
+            g_polygon->vertexCount = static_cast<u16>(g_polygonCount);
             g_polygon->flags |= 7;
-            if (camera) camera->AttachScreenPolygon(g_polygon);   // 0x00019460 (ecx = +0xE0)
+            camera->AttachScreenPolygon(g_polygon);
         }
         g_polygon = nullptr;
     }
     if (g_pool.empty()) g_pool.resize(kPoolSize);
-    if (g_poolIndex >= kPoolSize) {                   // (the pool exhausted: the first polygon's arrays, L)
-        NiScreenPolygon* p = g_pool[0].Get();
-        *vertices = p ? p->vertices.data() : nullptr;
-        *uvs = p ? p->uvs.data() : nullptr;
-        if (colors) *colors = p ? p->colors.data() : nullptr;
+    if (g_poolIndex >= kPoolSize) {
+        // Already queued strips own these pool entries until this click completes.
+        // Dropping the excess chain preserves their geometry instead of corrupting pool[0].
+        NotPorted("NiOutline::AddPolygonRun: ribbon pool exhausted; excess chain omitted");
         return;
     }
     if (!g_pool[g_poolIndex]) {
@@ -643,8 +643,18 @@ void NiOutline::AddPolygonRun(s32 count, u32 r, u32 g, u32 b, NiPoint3** vertice
         g_pool[g_poolIndex] = p;
     }
     g_polygon = g_pool[g_poolIndex++].Get();
-    g_polygonCount = 0;
-    AddPolygonRun(count, r, g, b, vertices, uvs, colors);
+    // Pooled outline strips belong to the current camera pass, including HUD portraits.
+    // Refresh on every reuse: a pool entry can alternate between head and world cameras.
+    g_polygon->inheritHudAnchor = true;
+    g_polygonCount = count;
+    g_polygon->vertexCount = static_cast<u16>(count);
+    auto& c = g_polygon->colors;
+    for (s32 k = 0; k < count - 2; ++k) c[k] = {Bits(r), Bits(g), Bits(b), 1.0f};
+    c[count - 2] = {0, 0, 0, 0};
+    c[count - 1] = {0, 0, 0, 0};
+    *vertices = g_polygon->vertices.data();
+    *uvs = g_polygon->uvs.data();
+    if (colors) *colors = c.data();
 }
 
 void SetOutlineTexture(NiObject* texture) {           // orig: 0x0013CEF0 (cdecl)
@@ -672,15 +682,11 @@ void BeginOutlineClick() {                            // orig: 0x0013C7E0 (Click
 
 void FinishOutlineClick(NiCamera& camera) {           // orig: 0x0013E3F0 (cdecl, after the cull)
     if (g_outlineMode != 2) return;
-    if (g_polygon) {                                  // the rest from the last run's last two cleared, attached
-        const s32 from = g_polygonCount - 2;          // (no clamp here)
-        for (s32 k = from; k < kPolygonVertices; ++k) {
-            if (k < 0) continue;                      // (a polygon has a run of at least 4: unreachable, a UB guard)
-            g_polygon->colors[k] = {0, 0, 0, 0};
-            g_polygon->vertices[k] = {0, 0, 0};
-        }
+    if (g_polygon) {
+        // The exact strip length excludes stale pool padding without moving either endpoint.
+        g_polygon->vertexCount = static_cast<u16>(g_polygonCount);
         g_polygon->flags |= 7;
-        camera.AttachScreenPolygon(g_polygon);        // 0x00019460
+        camera.AttachScreenPolygon(g_polygon);
         g_polygon = nullptr;
     }
     // (then the outline geometry DAT_002FA4F0: no code sets it, L)

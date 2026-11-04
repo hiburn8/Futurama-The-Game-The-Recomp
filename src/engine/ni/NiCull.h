@@ -32,7 +32,10 @@ int PlaneSide(const NiBound& b, const NiPlane& p);
 // orig: NiCamera::Click 0x00100CE0: the scene is culled when it is a visual object. With the camera's renderer
 // (NiCamera::renderer) the visible geometry is displayed too: SetCameraData, BeginScene, the accumulator, the cull
 // with the geometry classes' display, FinishAccumulating, EndScene; without one, the cull pass alone (the counters).
-void VisitForCulling(NiCamera& camera, NiAVObject* scene);
+// FrontendScene opts only the native Cam3 scene into the same display-only Hor+ pass.
+// It does not change game status, menu input or the cameras used by other UI scenes.
+enum class CameraRole { Original, GameplayWorld, FrontendScene };
+void VisitForCulling(NiCamera& camera, NiAVObject* scene, CameraRole role = CameraRole::Original);
 
 // orig: 0x0013E5E0 (cdecl; the HUD head's model): a node with a NiTriBasedGeom child becomes an outline (with
 // controllers: its children move into a new outline child; else a clone of it as a NiOutline takes its place in

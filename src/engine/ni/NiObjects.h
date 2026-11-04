@@ -8,6 +8,7 @@
 #pragma once
 
 #include "engine/ni/NiMath.h"
+#include "engine/ni/HudLayout.h"
 #include "engine/ni/NiStream.h"
 
 #include <array>
@@ -418,6 +419,8 @@ void SetOutlineWidth(NiAVObject* object, f32 width);
 
 class NiGeometry : public NiAVObject {
 public:
+    // Port-only role for an explicitly bound native dimmer; never serialized.
+    bool fullScene = false;
     FUT_NI_CLASS(NiGeometry)
     void LoadBinary(NiStream& s) override;           // orig: 0x00144760
     void LinkObject(NiStream& s) override;           // orig: 0x00144E80
@@ -596,6 +599,8 @@ public:
     // +0xC4 (x), +0xD4 (y) and +0xF4 (w) into the port; false (x / y partly written) behind the camera (w at most
     // 1e-5) or outside [-1, 1].
     bool WorldPtToScreenPt(const NiPoint3& p, f32& x, f32& y) const;
+    // Display-only projection through the gameplay Hor+ frustum. Never changes the camera.
+    bool WorldPtToGameplayScreenPt(const NiPoint3& p, f32& x, f32& y) const;
     // orig: 0x00100230: the non-null polygons moved down in order (SetAt: the size is not reduced).
     void CompactScreenPolygons();
     // orig: 0x00100FC0: the polygon's first slot cleared, then CompactScreenPolygons.
@@ -889,6 +894,11 @@ public:
     std::vector<NiColorA> colors;                    // +0x18 (empty: none)
     u16 flags = 0;                                   // +0x1C (bit 0: attached to a camera, 0x00019460)
     u8 strip = 0;                                    // +0x1E (0x00106AA0: drawn as a strip, prim 6; else a fan, 7)
+    // Port-only draw role, built by native callers; never serialized in a game file.
+    bool fullScene = false;
+    HudAnchor hudAnchor = HudAnchor::Center;
+    bool inheritHudAnchor = false; // generated outlines share their camera pass's owner
+    bool hudFlight = false; // height-scaled canvas with full-output clipping
     u8 drawOnce = 0;                                 // +0x1F (0x00106AC0: with +0x1E, Click's first loop draws it
                                                      //  and removes it from the camera)
     u32 field20 = 0;                                 // +0x20

@@ -3,7 +3,7 @@
 // the decompiled renderer (render/nixbox NiXBoxRenderer on the D3D11 backend of its D3D8 stream), the controller on
 // port 0 (or the keyboard: Window's KeyboardGamepad).
 //
-//   fut_game <iso-or-folder> [--size WxH] [--render-scale 1|2|3|4|4.5] [--saves <dir>]
+//   fut_game <iso-or-folder> [--size WxH] [--render-scale 1|2|3|4|4.5] [--widescreen on] [--saves <dir>]
 //   fut_game                       (no arguments, e.g. double-clicked: platform/win32/Launcher.h finds the disc)
 //
 // The release build is a Windows-subsystem program (no console window when double-clicked; started from a terminal
@@ -84,6 +84,13 @@ bool CheckDisc(const std::string& source, std::string& error) {
     return probe.Load(std::move(data), &error);
 }
 
+bool SupportedWideSize(u32 width, u32 height) {
+    constexpr u32 supported[][2] = {{1280, 800}, {1920, 1080}, {1920, 1200}, {2560, 1440}, {3840, 2160}};
+    for (const auto& size : supported)
+        if (width == size[0] && height == size[1]) return true;
+    return false;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -95,18 +102,21 @@ int main(int argc, char** argv) {
     };
     std::string source = argc >= 2 ? argv[1] : platform::FindDisc(CheckDisc);   // the disc image / folder
     if (argc < 2 && source.empty()) {                 // (no argument and the dialog cancelled)
-        std::fprintf(stderr, "usage: fut_game <iso-or-folder> [--size WxH] [--render-scale 1|2|3|4|4.5] [--saves <dir>]");
+        std::fprintf(stderr, "usage: fut_game <iso-or-folder> [--size WxH] [--render-scale 1|2|3|4|4.5] [--widescreen on] [--saves <dir>]");
         std::fputs("\n", stderr);
         return 2;
     }
     u32 width = 1280, height = 960;
     u32 sceneWidth = 640, sceneHeight = 480;
-    bool renderScaleSeen = false;
+    bool renderScaleSeen = false, widescreen = false, widescreenSeen = false;
+    std::string sizeText;
     std::filesystem::path saveDir = SaveFolder();     // (--saves <dir>)
     for (int i = 2; i < argc; ++i) {
         const std::string a = argv[i];
-        if (a == "--size" && i + 1 < argc) std::sscanf(argv[++i], "%ux%u", &width, &height);
-        else if (a == "--saves" && i + 1 < argc) saveDir = argv[++i];
+        if (a == "--size" && i + 1 < argc) {
+            sizeText = argv[++i];
+            std::sscanf(sizeText.c_str(), "%ux%u", &width, &height);
+        } else if (a == "--saves" && i + 1 < argc) saveDir = argv[++i];
         else if (a == "--render-scale") {
             if (renderScaleSeen) return fail("duplicate option: --render-scale", 2);
             renderScaleSeen = true;
@@ -118,13 +128,27 @@ int main(int argc, char** argv) {
             else if (value == "4") sceneWidth = 2560, sceneHeight = 1920;
             else if (value == "4.5") sceneWidth = 2880, sceneHeight = 2160;
             else return fail("unsupported render scale (expected 1, 2, 3, 4 or 4.5): " + value, 2);
+        } else if (a == "--widescreen") {
+            if (widescreenSeen) return fail("duplicate option: --widescreen", 2);
+            widescreenSeen = true;
+            if (i + 1 >= argc) return fail("unknown option (or its value missing): " + a, 2);
+            const std::string value = argv[++i];
+            if (value != "on") return fail("unsupported widescreen mode: " + value, 2);
+            widescreen = true;
         } else {
             return fail(std::string("unknown option (or its value missing): ") + argv[i], 2);
         }
     }
     const bool scaled = sceneWidth != 640;
+    if (widescreen && scaled) return fail("--widescreen cannot be combined with --render-scale above 1", 2);
     if (scaled && (width < 1280 || height < 800 || u64(width) * height > u64(3840) * 2160))
         return fail("scaled output requires at least 1280x800 and at most the 3840x2160 pixel budget", 2);
+    if (widescreen) {
+        char trailing = 0;
+        if (sizeText.empty() || std::sscanf(sizeText.c_str(), "%ux%u%c", &width, &height, &trailing) != 2 ||
+            !SupportedWideSize(width, height))
+            return fail("unsupported widescreen size (expected 1280x800, 1920x1080, 1920x1200, 2560x1440 or 3840x2160)", 2);
+    }
     std::string error;
     fs::Vfs vfs;
     if (!vfs.Open(source, error)) return fail(source + ": " + error, 1);
@@ -139,9 +163,11 @@ int main(int argc, char** argv) {
     platform::Window window;
     if (!window.Create("Futurama", width, height, true)) return fail("window creation failed", 1);
     render::xd3d::D3D11Device device;                 // the decompiled renderer's D3D8 stream, executed
-    if (!device.Init(window.Handle(), error, scaled)) return fail(error, 1);
-    if (scaled && !device.SetPresentationSize(width, height)) return fail("presentation size setup failed", 1);
+    const bool fitted = scaled || widescreen;
+    if (!device.Init(window.Handle(), error, fitted)) return fail(error, 1);
+    if (fitted && !device.SetPresentationSize(width, height)) return fail("presentation size setup failed", 1);
     if (scaled && !device.SetSceneResolution(sceneWidth, sceneHeight, error)) return fail(error, 1);
+    if (widescreen && !device.SetWideSceneResolution(width, height, error)) return fail(error, 1);
     render::nixbox::NiXBoxRenderer renderer(device);  // the factory 0x0014C200 (App+0x104)
     platform::XInputPads xinput;
     input::GamepadState pad0{};
@@ -200,11 +226,15 @@ int main(int argc, char** argv) {
     const char* startLevel = nullptr;                 // (null = the boot)
     if (!app.Init(startLevel)) return fail("App::Init failed", 1);
     for (s32 f = 0; window.Pump(); ++f) {
-        if (scaled && window.Resized()) {
+        if (fitted && window.Resized()) {
             const u32 outputWidth = window.Width(), outputHeight = window.Height();
-            if (outputWidth < 1280 || outputHeight < 800 || u64(outputWidth) * outputHeight > u64(3840) * 2160)
+            if (widescreen && !SupportedWideSize(outputWidth, outputHeight))
+                return fail("resized output is not a supported 16:9/16:10 size", 1);
+            if (scaled && (outputWidth < 1280 || outputHeight < 800 ||
+                           u64(outputWidth) * outputHeight > u64(3840) * 2160))
                 return fail("resized output outside the supported 1280x800..3840x2160 bounds", 1);
             if (!device.SetPresentationSize(outputWidth, outputHeight)) return fail("presentation resize failed", 1);
+            if (widescreen && !device.SetWideSceneResolution(outputWidth, outputHeight, error)) return fail(error, 1);
         }
         xinput.Poll();                                // (Input_Update reads the pads through readPad every step)
         QueryPerformanceCounter(&now);

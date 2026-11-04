@@ -523,6 +523,7 @@ void FrontendContext::SetupFade() {                   // orig: 0x00024AA0
     static const ni::NiPoint3 kQuad[4] = {{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}};
     static const ni::NiColorA kBlack[4] = {{0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}};
     fade_ = new ni::NiScreenPolygon(4, kQuad, nullptr, kBlack);
+    fade_->fullScene = true; // authored whole-scene fade, not menu content
     auto* a = new ni::NiAlphaProperty;                // new(0x1C): flags 0xEC
     a->flags = u16(a->flags | 1);
     auto* vc = new ni::NiVertexColorProperty;         // new(0x20) (+0x18 = 0, +0x1C = 1), then +0x1C = 0, +0x18 = 1
@@ -751,7 +752,8 @@ void FrontendContext::Render() {                      // orig: 0x00021B60
         if (logoManager_) logoManager_->Update(logoTime);   // (+0x60)->vf38(+0x58)
         if (logoNode_) logoNode_->UpdateDownwardPass(logoTime, true);   // (+0x50)->Update(+0x58, 1)
     }
-    if (camera_) ni::VisitForCulling(*camera_, root_.Get());   // (+0x68)->Click (+0x15C = the root)
+    // Cam3 also owns the original Options/Load camera moves and their scene-mode labels.
+    if (camera_) ni::VisitForCulling(*camera_, root_.Get(), ni::CameraRole::FrontendScene);
     // (the hint text: Mem_ReturnTrue)
     if (labels_) labels_->Update();                   // (+0x38) 0x00025700
     if (extrasPanel) extrasPanel->Draw();             // (+0x20)->vf08 0x000208E0: the shown extras menu

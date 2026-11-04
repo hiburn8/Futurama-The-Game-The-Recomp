@@ -965,7 +965,7 @@ void Session::Render(f32 realDt) {                    // orig: 0x000C8F20
     // orig: 0x000C92E7: App->vf14() (the renderer; no null test) vf44(0, DAT_002D67E0): the clear between the objects'
     // render and the camera's Click (the flags Camera::Apply just set: 4, or 5 with the fog)
     if (ni::NiRenderer* r = o_.renderer) r->ClearBuffer(nullptr, g_clearFlags);
-    if (level.camera) level.camera->Click();          // orig: Camera 0x00012410 (the cull pass: NiCull.h)
+    if (level.camera) level.camera->Click(o_.ingame); // same world framing while paused; frontend stays original (the cull pass: NiCull.h)
     if (level.hud) level.hud->Draw();                 // orig: 0x000E5900 (S+0x118)
     if (level.camera) level.camera->DrawOverlay();    // orig: 0x00012450 (the overlay camera +0x34: the fade)
     if (level.player) level.player->RenderView(realDt);

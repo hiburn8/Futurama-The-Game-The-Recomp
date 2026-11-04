@@ -35,11 +35,15 @@ public:
 
     // `window` may be null (offscreen). The Xbox back buffer (surf1, 640 x 480) is a D3D11 render target of that
     // size; the default Swap copies it to the window's swap chain (stretched). fitOutput opts into aspect-preserving
-    // presentation of a higher-resolution 4:3 scene while the logical native canvas stays unchanged.
+    // presentation of a higher-resolution 4:3 or physical wide scene while the logical native canvas stays unchanged.
     bool Init(HWND__* window, std::string& error, bool fitOutput = false);
     // Exact 4:3 physical scene raster, 640x480..2880x2160. Allocation failure preserves the old target pair.
     bool SetSceneResolution(u32 width, u32 height, std::string& error);
+    bool SetWideSceneResolution(u32 width, u32 height, std::string& error);
     bool SetPresentationSize(u32 width, u32 height);
+    float SceneAspect() const override;
+    bool SetSceneWorld(bool world) noexcept override;
+    ni::HudAnchor SetHudAnchor(ni::HudAnchor anchor) noexcept override;
     u32 draws() const { return draws_; }
 
     void Clear(u32 count, const D3DRECT* rects, u32 flags, u32 color, f32 z, u32 stencil) override;

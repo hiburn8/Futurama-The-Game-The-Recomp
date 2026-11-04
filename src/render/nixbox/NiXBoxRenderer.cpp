@@ -19,6 +19,41 @@ using namespace xd3d;
 
 namespace {
 
+class SceneMapping {
+    XD3DDevice& device_;
+    bool active_, alignFull_, previous_ = false;
+    f32 offset_[2]{};
+public:
+    SceneMapping(XD3DDevice& device, bool full, bool alignFull, float horizontalScale = 1.0f)
+        : device_(device), active_(full), alignFull_(alignFull || horizontalScale != 1.0f) {
+        if (active_) previous_ = device_.SetSceneWorld(true);
+        if (alignFull_) {
+            offset_[0] = device_.screenSpaceOffset[0]; offset_[1] = device_.screenSpaceOffset[1];
+            // Full-frame fades must cover the border. Cancel the fixed-function
+            // VS's native 0.53125 logical-pixel shift, including any prior offset.
+            if (alignFull) device_.SetScreenSpaceOffset(-0.53125f, -0.53125f);
+            else device_.SetScreenSpaceOffset((offset_[0] + 0.53125f) / horizontalScale - 0.53125f, offset_[1]);
+        }
+    }
+    ~SceneMapping() {
+        if (alignFull_) device_.SetScreenSpaceOffset(offset_[0], offset_[1]);
+        if (active_) device_.SetSceneWorld(previous_);
+    }
+};
+
+// Keep the camera transforms after a screen draw, including a failed backend draw.
+class ScreenTransformScope {
+    XD3DDevice& device_;
+    D3DMATRIX view_, projection_;
+public:
+    ScreenTransformScope(XD3DDevice& device, const D3DMATRIX& view, const D3DMATRIX& projection)
+        : device_(device), view_(view), projection_(projection) {}
+    ~ScreenTransformScope() {
+        device_.SetTransform(TS_VIEW, view_);
+        device_.SetTransform(TS_PROJECTION, projection_);
+    }
+};
+
 void NotPorted(const char* what) {
     static std::vector<std::string> seen;
     for (const std::string& s : seen)
@@ -80,6 +115,30 @@ NiXBoxRenderer::~NiXBoxRenderer() {
     // (the groups go first: renderer data that outlives the renderer is left without a group, see ~NiXBoxGeometryGroup)
     for (auto& bucket : pending_) bucket.clear();
     groups_.clear();
+}
+
+// Only the opt-in wide path uses these scopes. Nested auxiliary passes restore their
+// parent target, camera constants and logical viewport, including exception unwinding.
+void NiXBoxRenderer::PushCameraPass() {
+    cameraPasses_.push_back({cameraInput_, current_, d3d_.transforms[TS_VIEW], d3d_.transforms[TS_PROJECTION],
+                            d3d_.viewport, {d3d_.screenSpaceOffset[0], d3d_.screenSpaceOffset[1]},
+                            d3d_.viewportSet, inScene_, accumulator_, accumulator_ ? accumulator_->camera : nullptr});
+}
+void NiXBoxRenderer::PopCameraPass() noexcept {
+    if (cameraPasses_.empty()) return;
+    const auto saved = cameraPasses_.back(); cameraPasses_.pop_back();
+    current_ = saved.target;
+    d3d_.SetRenderTarget(current_->color, current_->depth);
+    d3d_.SetScreenSpaceOffset(saved.screenOffset[0], saved.screenOffset[1]);
+    if (saved.input.valid) {
+        const auto& c = saved.input;
+        SetCameraData(c.eye, c.dir, c.up, c.right, c.frustum, c.port);
+    }
+    cameraInput_ = saved.input;
+    d3d_.SetTransform(TS_VIEW, saved.view); d3d_.SetTransform(TS_PROJECTION, saved.projection);
+    d3d_.SetViewport(saved.viewport); d3d_.viewportSet = saved.viewportSet;
+    inScene_ = saved.inScene; accumulator_ = saved.accumulator;
+    if (accumulator_) accumulator_->camera = saved.accumulatingCamera;
 }
 
 // ---- frame -----------------------------------------------------------------------------------------------------
@@ -179,6 +238,8 @@ void NiXBoxRenderer::EndScene() {                     // orig: 0x00146A50
 
 void NiXBoxRenderer::SetCameraData(const ni::NiPoint3& E, const ni::NiPoint3& D, const ni::NiPoint3& U,
                                    const ni::NiPoint3& R, const f32 f[6], const f32 port[4]) {   // orig: 0x00146A70
+    cameraInput_.eye = E; cameraInput_.dir = D; cameraInput_.up = U; cameraInput_.right = R;
+    std::copy_n(f, 6, cameraInput_.frustum); std::copy_n(port, 4, cameraInput_.port); cameraInput_.valid = true;
     // the view matrix +0x610: the columns R, U, D and the eye's projections
     view_ = {};
     view_.m[0][0] = R.x, view_.m[0][1] = U.x, view_.m[0][2] = D.x;
@@ -351,6 +412,8 @@ void NiXBoxRenderer::DisplayParticles(ni::NiGeometry& particles, const ni::NiCam
 }
 
 void NiXBoxRenderer::DrawTriShape(ni::NiGeometry& geometry) {   // orig: 0x0014C580
+    // Only an explicitly marked authored dimmer; after accumulation, around the actual draw.
+    SceneMapping mapping(d3d_, geometry.fullScene, geometry.fullScene && GameplayAspect()>4.0f/3.0f);
     if (!inScene_) return;
     ni::NiGeometryData* data = geometry.modelData.Get();
     if (!data || data->vertexCount == 0) return;      // data vf30 (the active vertex count)
@@ -402,18 +465,28 @@ void NiXBoxRenderer::DrawScreenTexture(ni::NiScreenTexture& t) {   // orig: 0x00
 
 // ---- screen polygons --------------------------------------------------------------------------------------------
 void NiXBoxRenderer::DrawScreenPolygon(ni::NiScreenPolygon& poly) {   // orig: 0x0014B680 (slot 54)
+    // Exact native fade callers opt in. Ordinary HUD/textured/loading polygons
+    // retain the current mapping; an auxiliary target ignores scene mapping.
+    ni::HudAnchorScope anchor(this, poly.inheritHudAnchor ? hudAnchor_ : poly.hudAnchor);
+    const float flightExpansion = poly.hudFlight ? ni::HudExpansion(GameplayAspect()) : 1.0f;
+    SceneMapping mapping(d3d_, poly.fullScene || poly.hudFlight,
+                         poly.fullScene && GameplayAspect()>4.0f/3.0f, flightExpansion);
     // 0x00106B80: renderer +0xC = the polygon's property state (+8), +0x10 = 0
     propertyState = poly.State();
     effectState = nullptr;
     if (!inScene_ || poly.vertexCount == 0) return;   // +0x500; +0xC
     // +0x32C = +0x33C (the bound for the pipeline)
     if (!PackScreenPolygon(poly)) return;             // 0x00149FC0(poly, +0x34C, +0x350)
+    ScreenTransformScope cameraTransforms(d3d_, view_, projection_);
     d3d_.SetTransform(TS_VIEW, screenView_);          // +0x354
-    d3d_.SetTransform(TS_PROJECTION, ScreenProjection());   // +0x394
+    auto screenProjection = ScreenProjection();
+    if (poly.hudFlight) {
+        screenProjection.m[0][0] /= flightExpansion;
+        screenProjection.m[2][0] /= flightExpansion;
+    }
+    d3d_.SetTransform(TS_PROJECTION, screenProjection);   // +0x394
     // 0x00149B70(0, 0, the identity transform (0x002D7820, translate 0x002F915C, scale 1), +0x32C, +0x690, 0)
     DrawGeometry(nullptr, nullptr, ni::NiTransform{}, polyData_);
-    d3d_.SetTransform(TS_VIEW, view_);                // +0x610
-    d3d_.SetTransform(TS_PROJECTION, projection_);    // +0x650
 }
 
 xd3d::D3DMATRIX NiXBoxRenderer::ScreenProjection() const {

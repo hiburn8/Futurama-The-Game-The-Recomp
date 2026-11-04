@@ -2,6 +2,7 @@
 // x87 conventions as in CharacterUpdate.cpp: F() = FSTP to a float, intermediates are double. The original's matrices
 // are column chunks (chunk k = column k of the port's NiMatrix3).
 #include "game/object/ChickenWalker.h"
+#include "engine/ni/NiRenderer.h"
 
 #include "core/CrtRand.h"
 #include "core/CrtString.h"
@@ -586,6 +587,18 @@ void ChickenWalker::DamageIndicator(const NiPoint3& at) {
     Camera* cam = level.camera.get();
     ni::NiCamera* nc = cam ? cam->sceneCamera.Get() : nullptr;
     if (!nc) return;                                  // (the original tests neither)
+    // Display-only side planes follow output changes without mutating the camera
+    // or the native cached frustumSides used by the original indicator path.
+    auto displaySides = frustumSides;
+    const float expansion = ni::HudExpansion(nc->renderer ? nc->renderer->GameplayAspect() : 4.0f / 3.0f);
+    if (expansion > 1.0f) {
+        const auto* fr = nc->frustum;
+        const double center = (double(fr[0]) + fr[1]) * 0.5;
+        const double half = (double(fr[1]) - fr[0]) * 0.5 * expansion;
+        displaySides[2] = {F(center - half), 0, -fr[4]};
+        displaySides[3] = {F(-(center + half)), 0, fr[4]};
+        (void)ni::Unitize(displaySides[2]); (void)ni::Unitize(displaySides[3]);
+    }
     const ni::NiMatrix3& R = nc->world.rotate;        // +0x70 (12 dwords copied)
     const NiPoint3& T = nc->world.translate;          // +0xA0
     const NiPoint3 d{F(double(at.x) - T.x), F(double(at.y) - T.y), F(double(at.z) - T.z)};   // FSUB; FSTP
@@ -595,9 +608,9 @@ void ChickenWalker::DamageIndicator(const NiPoint3& at) {
     const double vy = (double(d.z) * m[2][1] + double(d.y) * m[1][1]) + double(d.x) * m[0][1];
     const double vz = (double(d.z) * m[2][2] + double(d.y) * m[1][2]) + double(d.x) * m[0][2];
     auto dot = [&](const NiPoint3& n) { return (vz * n.z + vy * n.y) + vx * n.x; };
-    const f32 bottom = F(dot(frustumSides[1]));       // +0x154 -> [esp+0x38]
-    const f32 left = F(dot(frustumSides[2]));         // +0x160 -> [esp+0x3C]
-    const f32 right = F(dot(frustumSides[3]));        // +0x16C -> [esp+0x28]
+    const f32 bottom = F(dot(displaySides[1]));       // +0x154 -> [esp+0x38]
+    const f32 left = F(dot(displaySides[2]));         // +0x160 -> [esp+0x3C]
+    const f32 right = F(dot(displaySides[3]));        // +0x16C -> [esp+0x28]
     Hud* hud = level.hud.get();                       // S+0x118 (no test in the original)
     auto show = [&](f32 v) { if (hud) hud->Command("cw_hud", "show_indicator", v); };   // 0x00296FB4 / 0x00296FBC
     const double front = (double(kUnitX.z) * vz + vy * double(kUnitX.y)) + vx * double(kUnitX.x);   // [0x002D77E0]
@@ -605,7 +618,7 @@ void ChickenWalker::DamageIndicator(const NiPoint3& at) {
         show(4.0f);
         return;
     }
-    const double top = (vz * frustumSides[0].z + vy * frustumSides[0].y) + vx * frustumSides[0].x;   // +0x148
+    const double top = (vz * displaySides[0].z + vy * displaySides[0].y) + vx * displaySides[0].x;   // +0x148
     if (top > 0.0) show(2.0f);                        // TEST AH,0x41; JNE
     else if (double(bottom) > 0.0) show(3.0f);
     if (double(left) > 0.0) show(0.0f);

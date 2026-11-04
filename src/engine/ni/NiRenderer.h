@@ -5,6 +5,7 @@
 #pragma once
 
 #include "engine/ni/NiMath.h"
+#include "engine/ni/HudLayout.h"
 
 namespace fut::render::xd3d {
 class XD3DDevice;
@@ -56,6 +57,13 @@ class NiSourceTexture;
 class NiRenderer {
 public:
     // orig: NiRenderer's ctor 0x001405E0 adds the renderer to the list DAT_002D7BBC (the destructor removes it).
+    // Explicit per-Click role. Defaults preserve every original backend/camera.
+    virtual HudAnchor SetHudAnchor(HudAnchor) noexcept { return HudAnchor::Center; }
+    virtual float GameplayAspect() const { return 4.0f / 3.0f; }
+    virtual float OutlineExpansion() const { return 1.0f; }
+    virtual bool SetGameplayWorld(bool) noexcept { return false; }
+    virtual void PushCameraPass() {}
+    virtual void PopCameraPass() noexcept {}
     NiRenderer();
     virtual ~NiRenderer();
     NiRenderer(const NiRenderer&) = delete;
@@ -132,4 +140,15 @@ extern bool g_precacheTextures;
 // first that fails; called by PostLinkObject 0x00118200 and the creators 0x001185B0 / 0x00118690.
 bool PrecacheTexture(NiSourceTexture& texture);
 
+// Scoped ownership applies to text and portrait draws as well as their depth clears.
+class HudAnchorScope {
+    NiRenderer* renderer_;
+    HudAnchor previous_;
+public:
+    HudAnchorScope(NiRenderer* renderer, HudAnchor anchor) noexcept
+        : renderer_(renderer), previous_(renderer ? renderer->SetHudAnchor(anchor) : HudAnchor::Center) {}
+    ~HudAnchorScope() { if (renderer_) renderer_->SetHudAnchor(previous_); }
+    HudAnchorScope(const HudAnchorScope&) = delete;
+    HudAnchorScope& operator=(const HudAnchorScope&) = delete;
+};
 }  // namespace fut::ni

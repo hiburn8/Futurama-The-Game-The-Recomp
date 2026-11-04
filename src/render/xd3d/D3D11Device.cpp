@@ -22,6 +22,7 @@
 #include <set>
 #include <stdexcept>
 #include <unordered_map>
+#include <utility>
 
 namespace fut::render::xd3d {
 using Microsoft::WRL::ComPtr;
@@ -488,6 +489,8 @@ struct D3D11Device::Impl {
     ComPtr<IDXGISwapChain> swapChain;
     bool fitOutput = false;
     u32 sceneWidth = 640, sceneHeight = 480;
+    bool wideScene = false, sceneWorld = false;
+    ni::HudAnchor hudAnchor = ni::HudAnchor::Center;
     Resource* sceneColor = nullptr;
     Resource* sceneDepth = nullptr;
     ComPtr<ID3D11DeviceContext> presentation;
@@ -507,7 +510,18 @@ struct D3D11Device::Impl {
         ComPtr<ID3D11ShaderResourceView> srv;
         u32 width = 0, height = 0;                    // game-facing logical dimensions
         u32 physicalWidth = 0, physicalHeight = 0;
+        bool scene = false;
     };
+    // Physical safe region only; native viewport/RHW constants remain unchanged.
+    std::pair<float, float> HorizontalMapping(const Target* target) const {
+        if (wideScene && !sceneWorld && target && target->scene) {
+            const float width = float(sceneHeight) * (4.0f / 3.0f);
+            const float extra = float(sceneWidth) - width;
+            return {hudAnchor == ni::HudAnchor::Left ? 0.0f :
+                    hudAnchor == ni::HudAnchor::Right ? extra : extra * 0.5f, width};
+        }
+        return {0.0f, target ? float(target->physicalWidth) : 0.0f};
+    }
     std::unordered_map<const Resource*, Target> targets;   // render targets (the back buffer, rendered textures)
     struct Tex {
         ComPtr<ID3D11ShaderResourceView> srv;
@@ -638,6 +652,7 @@ bool D3D11Device::Init(HWND__* window, std::string& error, bool fitOutput) {
 }
 
 bool D3D11Device::Impl::MakeTarget(Resource* resource, bool depth, u32 physicalWidth, u32 physicalHeight, Target& target) {
+    target.scene = resource == sceneColor || resource == sceneDepth;
     target.width = std::max(resource->width, 1u);
     target.height = std::max(resource->height, 1u);
     target.physicalWidth = physicalWidth;
@@ -795,8 +810,11 @@ void D3D11Device::Clear(u32 count, const D3DRECT* rects, u32 flags, u32 color, f
         auto edge = [](s32 value, u32 physical, u32 logical) {
             return LONG(std::clamp(std::ceil(double(value) * physical / logical - 0.5), 0.0, double(physical)));
         };
-        const D3D11_RECT rr{edge(r.x1, ct->physicalWidth, ct->width), edge(r.y1, ct->physicalHeight, ct->height),
-                            edge(r.x2, ct->physicalWidth, ct->width), edge(r.y2, ct->physicalHeight, ct->height)};
+        const auto [left, width] = d.HorizontalMapping(ct);
+        auto xedge = [&](s32 value) { return LONG(std::clamp(std::ceil(left + double(value) * width / ct->width - 0.5),
+                                                           0.0, double(ct->physicalWidth))); };
+        const D3D11_RECT rr{xedge(r.x1), edge(r.y1, ct->physicalHeight, ct->height),
+                            xedge(r.x2), edge(r.y2, ct->physicalHeight, ct->height)};
         d.ctx1->ClearView(ct->rtv.Get(), c, &rr, 1);
     }
     if (!(flags & 3) || !dt) return;
@@ -832,7 +850,8 @@ void D3D11Device::Clear(u32 count, const D3DRECT* rects, u32 flags, u32 color, f
     rd.FillMode = D3D11_FILL_SOLID, rd.CullMode = D3D11_CULL_NONE, rd.DepthClipEnable = FALSE;
     ComPtr<ID3D11RasterizerState> rs;
     d.device->CreateRasterizerState(&rd, &rs);
-    const D3D11_VIEWPORT v{0, 0, f32(ct->physicalWidth), f32(ct->physicalHeight), 0, 1};
+    const auto [left, width] = d.HorizontalMapping(ct);
+    const D3D11_VIEWPORT v{left, 0, width, f32(ct->physicalHeight), 0, 1};
     d.ctx->OMSetRenderTargets(1, ct->rtv.GetAddressOf(), dt->dsv.Get());
     d.ctx->RSSetViewports(1, &v);
     d.ctx->RSSetState(rs.Get());
@@ -855,7 +874,7 @@ bool D3D11Device::SetSceneResolution(u32 width, u32 height, std::string& error) 
         error = "scene raster must be exact 4:3 within 640x480..2880x2160, with fitted window output";
         return false;
     }
-    if (width == d.sceneWidth && height == d.sceneHeight) { error.clear(); return true; }
+    if (width == d.sceneWidth && height == d.sceneHeight && !d.wideScene) { error.clear(); return true; }
     // Allocate both first. No cache/binding/scale change is visible on allocation failure.
     Impl::Target color, depth;
     if (!d.MakeTarget(d.sceneColor, false, width, height, color) || !d.MakeTarget(d.sceneDepth, true, width, height, depth)) {
@@ -873,9 +892,54 @@ bool D3D11Device::SetSceneResolution(u32 width, u32 height, std::string& error) 
     d.ctx->PSSetShaderResources(0, 4, none);
     colorEntry->second = std::move(color);
     depthEntry->second = std::move(depth);
-    d.sceneWidth = width; d.sceneHeight = height;
+    d.sceneWidth = width; d.sceneHeight = height; d.wideScene = false;
     error.clear();
     return true;
+}
+
+bool D3D11Device::SetWideSceneResolution(u32 width, u32 height, std::string& error) {
+    Impl& d = *impl_;
+    if (!d.device || width < 640 || height < 480 || width > 3840 || height > 2160 ||
+        !(u64(width) * 9 == u64(height) * 16 || u64(width) * 10 == u64(height) * 16) ||
+        ((width != 640 || height != 480) && d.swapChain && !d.fitOutput)) {
+        error = "wide scene raster must be bounded exact 16:9/16:10, with fitted window output";
+        return false;
+    }
+    if (width == d.sceneWidth && height == d.sceneHeight && d.wideScene) { error.clear(); return true; }
+    // Allocate both first. No cache/binding/scale change is visible on allocation failure.
+    Impl::Target color, depth;
+    if (!d.MakeTarget(d.sceneColor, false, width, height, color) || !d.MakeTarget(d.sceneDepth, true, width, height, depth)) {
+        error = "wide scene colour/depth allocation failed";
+        return false;
+    }
+    auto colorEntry = d.targets.find(d.sceneColor), depthEntry = d.targets.find(d.sceneDepth);
+    if (colorEntry == d.targets.end() || depthEntry == d.targets.end()) {
+        error = "wide scene target pair is unavailable";
+        return false;
+    }
+    d.ctx->OMSetRenderTargets(0, nullptr, nullptr);
+    ID3D11ShaderResourceView* none[4]{};
+    d.ctx->PSSetShaderResources(0, 4, none);
+    colorEntry->second = std::move(color);
+    depthEntry->second = std::move(depth);
+    d.sceneWidth = width; d.sceneHeight = height; d.wideScene = true;
+    error.clear();
+    return true;
+}
+
+float D3D11Device::SceneAspect() const {
+    const auto& d = *impl_;
+    return d.wideScene ? float(d.sceneWidth) / d.sceneHeight : 4.0f / 3.0f;
+}
+
+ni::HudAnchor D3D11Device::SetHudAnchor(ni::HudAnchor anchor) noexcept {
+    const auto old = impl_->hudAnchor; impl_->hudAnchor = anchor; return old;
+}
+
+bool D3D11Device::SetSceneWorld(bool world) noexcept {
+    const bool old = impl_->sceneWorld;
+    impl_->sceneWorld = world;
+    return old;
 }
 
 bool D3D11Device::SetPresentationSize(u32 width, u32 height) {
@@ -1217,8 +1281,10 @@ void D3D11Device::Draw(u32 primitive, const u16* list, u32 count, u32 start) {
     d.ctx->PSSetShaderResources(0, 4, none);         // (a texture that is the target is unbound first)
     d.ctx->OMSetRenderTargets(1, ct->rtv.GetAddressOf(), dt ? dt->dsv.Get() : nullptr);
     // Native RHW coordinates/cb.vp remain logical; only the final hardware viewport grows.
-    const f32 sx = f32(ct->physicalWidth) / ct->width, sy = f32(ct->physicalHeight) / ct->height;
-    const D3D11_VIEWPORT v{viewport.X * sx, viewport.Y * sy, viewport.Width * sx, viewport.Height * sy,
+    const f32 sy = f32(ct->physicalHeight) / ct->height;
+    const auto [left, physicalWidth] = d.HorizontalMapping(ct);
+    const D3D11_VIEWPORT v{left + viewport.X * physicalWidth / ct->width, viewport.Y * sy,
+                           viewport.Width * physicalWidth / ct->width, viewport.Height * sy,
                            viewport.MinZ, viewport.MaxZ};
     d.ctx->RSSetViewports(1, &v);
     d.ctx->RSSetState(rz.Get());

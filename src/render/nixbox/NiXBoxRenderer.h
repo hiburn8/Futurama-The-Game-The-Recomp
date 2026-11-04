@@ -48,6 +48,16 @@ public:
     explicit NiXBoxRenderer(xd3d::XD3DDevice& device);
     ~NiXBoxRenderer() override;
 
+    ni::HudAnchor SetHudAnchor(ni::HudAnchor anchor) noexcept override {
+        const auto old = hudAnchor_; hudAnchor_ = anchor; d3d_.SetHudAnchor(anchor); return old;
+    }
+    float GameplayAspect() const override { return current_->texture ? 4.0f / 3.0f : d3d_.SceneAspect(); }
+    float OutlineExpansion() const override { return gameplayWorld_ ? GameplayAspect() / (4.0f / 3.0f) : 1.0f; }
+    bool SetGameplayWorld(bool world) noexcept override {
+        const bool old = gameplayWorld_; gameplayWorld_ = world; d3d_.SetSceneWorld(world); return old;
+    }
+    void PushCameraPass() override;
+    void PopCameraPass() noexcept override;
     void DisplayFrame() override;                     // orig: 0x001464F0
     // orig: 0x001473E0 (slot 65): the texture manager's source texture data unless the texture has renderer data.
     bool PrecacheTexture(ni::NiSourceTexture& texture) override;
@@ -168,6 +178,24 @@ private:
         xd3d::Resource* color = nullptr;
         xd3d::Resource* depth = nullptr;
     };
+    ni::HudAnchor hudAnchor_ = ni::HudAnchor::Center;
+    bool gameplayWorld_ = false;
+    struct CameraInput {
+        ni::NiPoint3 eye, dir, up, right;
+        f32 frustum[6]{}, port[4]{};
+        bool valid = false;
+    } cameraInput_;
+    struct CameraPass {
+        CameraInput input;
+        TargetSet* target;
+        xd3d::D3DMATRIX view, projection;
+        xd3d::D3DVIEWPORT8 viewport;
+        f32 screenOffset[2];
+        bool viewportSet, inScene;
+        ni::NiAccumulator* accumulator;
+        const ni::NiCamera* accumulatingCamera;
+    };
+    std::vector<CameraPass> cameraPasses_;
     TargetSet backBuffer_;                            // +0x14
     TargetSet* current_ = &backBuffer_;               // +0x58
     // The rendered textures' renderer data (NiXBoxRenderedTextureData L, 0x84 bytes, 0x0015E4C0; the texture's +0x20).

@@ -12,6 +12,7 @@
 #pragma once
 
 #include "render/xd3d/XD3DTypes.h"
+#include "engine/ni/HudLayout.h"
 
 #include <map>
 #include <memory>
@@ -39,6 +40,10 @@ struct Resource {
 
 class XD3DDevice {
 public:
+    // Opt-in physical scene mapping. Other backends retain the native canvas.
+    virtual ni::HudAnchor SetHudAnchor(ni::HudAnchor) noexcept { return ni::HudAnchor::Center; }
+    virtual float SceneAspect() const { return 4.0f / 3.0f; }
+    virtual bool SetSceneWorld(bool) noexcept { return false; }
     XD3DDevice();
     virtual ~XD3DDevice();
     XD3DDevice(const XD3DDevice&) = delete;
