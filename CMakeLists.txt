@@ -16,6 +16,24 @@ endif()
 # The static C / C++ runtime (/MT): the exe needs no VC++ redistributable, only DLLs that ship with Windows.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
+# SDL3 (the window, input and clock layer), linked statically: a system SDL3 when CMake finds one, else the pinned
+# release fetched at configure time.
+find_package(SDL3 CONFIG QUIET)
+if(NOT SDL3_FOUND)
+    include(FetchContent)
+    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDL_STATIC ON CACHE BOOL "" FORCE)
+    set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+    set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+    set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(SDL3
+        GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+        GIT_TAG release-3.4.18
+        GIT_SHALLOW TRUE)
+    FetchContent_MakeAvailable(SDL3)
+endif()
+
 add_library(fut_core STATIC
     src/core/FatalError.cpp
     src/core/XbeImage.cpp
@@ -135,8 +153,8 @@ add_library(fut_core STATIC
 target_include_directories(fut_core PRIVATE src)
 
 add_library(fut_render STATIC
-    src/platform/win32/Window.cpp
-    src/platform/win32/GamepadInput.cpp
+    src/platform/sdl/Window.cpp
+    src/platform/sdl/GamepadInput.cpp
     src/platform/win32/Launcher.cpp
     src/platform/win32/XAudio2SoundBackend.cpp
     src/platform/win32/MovieService.cpp
@@ -144,7 +162,7 @@ add_library(fut_render STATIC
     src/render/xd3d/D3D11Device.cpp
 )
 target_include_directories(fut_render PRIVATE src)
-target_link_libraries(fut_render PUBLIC fut_core)
+target_link_libraries(fut_render PUBLIC SDL3::SDL3-static fut_core)
 
 add_executable(fut_game
     app/game/GameMain.cpp
@@ -154,4 +172,4 @@ if(MSVC)
     target_link_options(fut_game PRIVATE /ENTRY:mainCRTStartup)
 endif()
 target_include_directories(fut_game PRIVATE src)
-target_link_libraries(fut_game PRIVATE fut_core fut_render d3d11 dxgi d3dcompiler xinput xaudio2)
+target_link_libraries(fut_game PRIVATE SDL3::SDL3-static fut_core fut_render winmm imm32 version setupapi dinput8 d3d11 dxgi d3dcompiler xinput xaudio2)

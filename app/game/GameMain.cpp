@@ -13,7 +13,7 @@
 // bilinear filter, or --filter nearest for unfiltered pixels; 1 is the Xbox's picture); the game itself is unchanged
 // (docs/analysis/render_scale_plan.md). The window starts borderless full screen on its monitor; Alt+Enter toggles
 // a window of the windowed size (--size WxH, default 1280x960; --size or --windowed start windowed;
-// platform/win32/Window.h).
+// platform/sdl/Window.h: SDL3 for the window, the keyboard and the controllers).
 //
 // The release build is a Windows-subsystem program (no console window when double-clicked; started from a terminal
 // it writes to that terminal); its errors also go to message boxes.
@@ -44,11 +44,11 @@
 #include "game/app/SaveStorage.h"
 #include "game/sound/GameSound.h"
 #include "game/text/TextObject.h"
-#include "platform/win32/GamepadInput.h"
+#include "platform/sdl/GamepadInput.h"
+#include "platform/sdl/Window.h"
 #include "platform/win32/Launcher.h"
 #include "platform/win32/MovieService.h"
 #include "platform/win32/XAudio2SoundBackend.h"
-#include "platform/win32/Window.h"
 #include "render/nixbox/NiXBoxRenderer.h"
 #include "render/xd3d/D3D11Device.h"
 
@@ -150,15 +150,13 @@ int main(int argc, char** argv) {
     if (!window.Create("Futurama", width, height, true, fullscreen)) return fail("window creation failed", 1);
     render::xd3d::D3D11Device device;                 // the decompiled renderer's D3D8 stream, executed
     device.SetRenderScale(renderScale);               // (before Init: the targets are made at the scale)
-    if (!device.Init(window.Handle(), error)) return fail(error, 1);
+    if (!device.Init(window.NativeHandle(), error)) return fail(error, 1);
     device.SetFilter(filter);
     render::nixbox::NiXBoxRenderer renderer(device);  // the factory 0x0014C200 (App+0x104)
-    platform::XInputPads xinput;
+    platform::Gamepads gamepads;
     input::GamepadState pad0{};
     game::app::HostSaveStorage saves(saveDir);        // (one directory per save game, as the U:\ model)
     saves.readDisc = [&](const std::string& path, std::vector<u8>& out) { return vfs.ReadFile(path, out); };
-    LARGE_INTEGER freq, now;
-    QueryPerformanceFrequency(&freq);
     // orig: App::Init's XboxSoundSystem 0x000CCD90 (DirectSoundCreate, the effects image): the backend first, its
     // hardware data before the sound system's constructor downloads the effects image.
     platform::XAudio2SoundBackend::Options audioOptions;
@@ -191,30 +189,28 @@ int main(int argc, char** argv) {
     sv.sound = &sound;
     sv.movies = &movies;
     sv.readPad = [&](u32 port) -> const input::GamepadState* {
-        if (port != 0) return xinput.State(port);
-        pad0 = xinput.State(0) ? *xinput.State(0) : platform::KeyboardGamepad(window);
+        if (port != 0) return gamepads.State(port);
+        pad0 = gamepads.State(0) ? *gamepads.State(0) : platform::KeyboardGamepad(window);
         return &pad0;
     };
-    sv.deviceChanges = [&](u32& ins, u32& rem) { return xinput.TakeChanges(ins, rem); };   // (XGetDeviceChanges)
+    sv.deviceChanges = [&](u32& ins, u32& rem) { return gamepads.TakeChanges(ins, rem); };   // (XGetDeviceChanges)
     sv.renderer = &renderer;
     sv.saves = &saves;
-    sv.qpf = static_cast<u64>(freq.QuadPart);
+    sv.qpf = platform::Window::Frequency();         // (QueryPerformanceFrequency)
     sv.pal = vfs.IsPal();                             // (the disc's archives: sysPAL.img / FutPAL##.img)
     // (XGetLanguage: unset = English, the default; the PAL game's language choice comes later)
     text::CreateAppFont(sv.readFile);                 // App::Init's error overlay: font 0 (tex2)
     game::app::App app(sv);
-    QueryPerformanceCounter(&now);
-    const u64 base = static_cast<u64>(now.QuadPart);
+    const u64 base = platform::Window::Counter();
     app.qpc = 0;                                      // (the clock counts from the start: QPC - base)
-    app.input.onRumble = [&](const input::Pad& p) { xinput.SetMotors(p.Port(), p.motorLeft, p.motorRight); };
+    app.input.onRumble = [&](const input::Pad& p) { gamepads.SetMotors(p.Port(), p.motorLeft, p.motorRight); };
     const char* startLevel = nullptr;                 // (null = the boot)
     if (!app.Init(startLevel)) return fail("App::Init failed", 1);
     for (s32 f = 0; window.Pump(); ++f) {
         if (window.Resized()) device.Resize(window.Width(), window.Height());   // (the swap chain follows the window)
-        xinput.Poll();                                // (Input_Update reads the pads through readPad every step)
-        QueryPerformanceCounter(&now);
+        gamepads.Poll();                              // (Input_Update reads the pads through readPad every step)
         app.frame = f;
-        app.qpc = static_cast<u64>(now.QuadPart) - base;
+        app.qpc = platform::Window::Counter() - base;
         if (!app.Frame()) break;                      // (the App quits: no context requested)
         if (soundOffline) {                           // (offline: the published state rendered and dropped)
             soundDrop.clear();

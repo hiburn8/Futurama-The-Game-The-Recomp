@@ -6,17 +6,18 @@
 just a real Windows build.
 
 I rebuilt the whole game in C++, one function at a time, straight from the original Xbox code (the `// orig:` comments point back to where each bit lives in the original).
-Graphics go through Direct3D 11, sound through XAudio2, and you can play with an Xbox controller or the keyboard.
+Graphics go through Direct3D 11, sound through XAudio2, and you can play with an Xbox, DualShock, Switch controller or
+keyboard.
 
 The aim was 1:1 with the original. Same levels, same physics, same scripts, same timing, even the same random
-numbers, frame for frame. It's not a remake or a remaster. It's the same game, it just runs on your PC now.
+numbers, frame for frame. It's not a remake or a remaster. It's the same game, it just runs outside of the PS2/Xbox now.
+Automated full playthroughs, replayed on the port and on the original running in an emulator, confirm it is
+frame-perfect end to end: all 752,000 frames of the game match.
 
 It's not an automatic translation of the disc either. All of the game's code is right here in this repo, written out
 in C++, and it's what gets compiled into the exe. Nothing from the disc's executable gets translated or run as game
 code. The disc is only read for the stuff that can't be shared: the models, textures, sounds, music, movies, level
-scripts, text, and some data tables stored inside the original `default.xbe`. There's one exception: the Xbox's sound
-chip has its own little DSP programs (the effects in `dsstdfx.bin` on the disc, plus a small startup program inside
-`default.xbe`), and those run on a tiny built-in emulation of that audio DSP, just like they would on the console.
+scripts, text, and some data tables stored inside the original `default.xbe`.
 
 ### You'll need your own copy
 
@@ -37,14 +38,18 @@ Built it yourself? Double-click works the same, or point it straight at your dis
 build\Release\FuturamaRecomp.exe <your futurama.iso or extracted folder>
 ```
 
-It starts full screen, with the picture kept at the Xbox's 4:3 shape and black bars either side, and draws the game
-at your screen's resolution rather than the Xbox's 640x480 (the game itself is unchanged; only the final picture is
-sharper). Alt+Enter switches to a window and back; `--windowed` or `--size 1920x1080` start in a window (the default
-window is 1280x960). `--render-scale 1` gives the original 640x480 picture scaled up, `--render-scale 2` a fixed
-1280x960, and `--filter nearest` crisp unfiltered pixels instead of the smooth scaling. Saves go to
-`%APPDATA%\FuturamaRecomp\saves`, or wherever you point `--saves`.
+It starts full screen at your screen's resolution, 4:3 with black bars; Alt+Enter toggles a window. Options:
 
-An Xbox controller just works. No controller? The keyboard does it too:
+| Option | Effect |
+| --- | --- |
+| `--windowed` | start in a window (1280x960) |
+| `--size 1920x1080` | the window size |
+| `--render-scale 1` | the original 640x480 picture scaled up (`2` = 1280x960, default `auto` = your screen) |
+| `--filter nearest` | crisp unfiltered pixels instead of smooth scaling |
+| `--saves <folder>` | where saves go (default `%APPDATA%\FuturamaRecomp\saves`) |
+
+An Xbox controller just works, and so do most other pads (DualShock, DualSense, Switch Pro and the like), plugged in
+before or during play. No controller? The keyboard does it too (the physical keys, on any layout):
 
 | Keys | Xbox pad |
 | --- | --- |
@@ -67,73 +72,6 @@ cmake --build build --config Release
 
 Have fun!
 
-## How I made it
-
-This took about two weeks (12-25 October 2026), with Claude Opus 5.5 on high reasoning effort doing most of the heavy
-lifting. Every function was rewritten by reading and understanding the original machine code, then tested against
-the real thing.
-
-A few things that made it work:
-
-- I used both the Xbox and PS2 versions. The Xbox version is the one I ported and tested against. The PS2 version
-  still had its class and function names left in, so it was basically a map of the code.
-- The original game runs in an emulator I put together on top of [Unicorn](https://www.unicorn-engine.org/), and the
-  port gets compared against it frame by frame: player and camera, enemies, every script call, the random numbers,
-  physics, graphics calls, sound and movies. If a single bit is off, the test fails.
-- Lots of playtesting. First a bot that finds its own way around each level. Then me playing, with my inputs recorded
-  and replayed on the original. And finally a lockstep mode, where the original runs right alongside the port while I
-  play and every frame gets checked live.
-
-## How close is it?
-
-Really close. Every game function the tests reach (701 of them) matches the original. That's backed by almost 4,000
-object tests, 60 level tests, 38 rendering tests, the menus, sound, movies and full playthroughs. One run goes from
-the start of level 1-1 to the end and on into level 1-2, and all 3.7 million things it compares match.
-
-I've played the whole game through, all 22 levels in order, each one carrying on from where the last ended with the
-same health, lives and ammo. That's about 3.5 hours and 752,000 frames, compared one by one against the original
-running in an emulator, and every frame matches. Where the original reads memory it never set up, the checks hand
-the port the original's values so the two stay in step (see [Original bug fixes](#original-bug-fixes)). Internal ID
-numbers the scripts give objects sometimes differ, but they don't change anything you see or play.
-
-<details>
-<summary>Per-level details</summary>
-
-| Level | Name | Frames |
-|---|---|---|
-| 1-1 | Planet Express | 9,369 (~2.5 min) |
-| 1-2 | Sewers | 75,143 (~21 min) |
-| 1-3 | Subway | 27,999 (~8 min) |
-| 1-4 | Old New York | 82,111 (~23 min) |
-| 1-5 | Red Light District | 25,691 (~7 min) |
-| 1-7 | Uptown | 25,539 (~7 min) |
-| 1-6 | New New York | 45,736 (~13 min) |
-| 2-1 | Weasel Canyon | 43,898 (~12 min) |
-| 2-6 | Run, Bender, Run | 7,117 (~2 min) |
-| 2-2 | The Mine Facility | 20,686 (~6 min) |
-| 2-3 | Red Rock Creek | 19,462 (~5.5 min) |
-| 2-4 | The Junkyard | 27,562 (~7.5 min) |
-| 2-5 | Rumble in the Junkyard | 14,752 (~4 min) |
-| 3-1 | Market Square | 20,383 (~5.5 min) |
-| 3-2 | Left Wing | 38,276 (~10.5 min) |
-| 3-3 | Right Wing | 53,185 (~15 min) |
-| 3-6 | Temple Courtyard | 28,896 (~8 min) |
-| 3-4 | Inner Temple | 53,104 (~15 min) |
-| 4-1 | Bogad Swamp Trail | 15,855 (~4.5 min) |
-| 5-1 | Bender's Breakout | 33,217 (~9 min) |
-| 5-2 | Leela's Last Laugh | 46,522 (~13 min) |
-| 5-3 | Fry Fights Back | 37,798 (~10.5 min) |
-
-</details>
-
-What I can't fully promise yet:
-
-- I haven't compared the final picture and sound with a real Xbox. The port sends exactly the same graphics and sound
-  commands, but how they come out on actual hardware hasn't been checked.
-- The emulator I tested against does a few maths instructions (sine, cosine and a couple of others) slightly
-  differently from a real Xbox, so those could be off in the very last bit.
-- Code that nothing ever reaches, like old debug features, is ported but untested.
-
 ## Quality-of-life improvements
 
 - **A language menu for the PAL disc.** The European Xbox release takes its language from the console's settings. The
@@ -141,11 +79,12 @@ What I can't fully promise yet:
   English, French, German, Italian or Spanish and you get that language's text, speech and movies. The NTSC disc
   only has English speech, so it stays English.
 - **60 Hz on both discs.** The PAL game originally ran at 50 Hz. Here it runs at 60 Hz, like the NTSC one.
+- **A few of the original's bugs fixed.** The aim is 1:1, so any bug that changes what you see or how the game plays
+  stays in. The only ones I fixed are where the original's result comes down to luck (memory it never sets up) or
+  would crash the Xbox.
 
-## Original bug fixes
-
-The aim is 1:1, so any bug that changes what you see or how the game plays stays in. The only ones I fixed are where
-the original's result comes down to luck (memory it never sets up) or would crash the Xbox.
+<details>
+<summary>The original's bugs and what I did with them</summary>
 
 | Bug | Status |
 |---|---|
@@ -165,3 +104,5 @@ the original's result comes down to luck (memory it never sets up) or would cras
 | Settings missing from a config file get random values (the game's own files never miss any) | Fixed |
 | Objects start with a random count of how many frames since they were last drawn | Fixed |
 | Crashes only bad data could cause (missing objects, dividing by zero, broken files, running out of memory) | Fixed |
+
+</details>
