@@ -29,7 +29,9 @@ scripts get loaded from that when you play.
 The easy way: grab the zip from the [Releases](../../releases) page, unzip it anywhere and double-click
 `FuturamaRecomp.exe`. The first time, it asks for your disc image (pick your `.iso`, or the `default.xbe` inside your
 extracted folder) and remembers it from then on. Put the `.iso` (or a `futurama` folder with the extracted files)
-right next to the exe and it finds it by itself. Windows 10 or 11, 64-bit, nothing else to install.
+right next to the exe and it finds it by itself. Windows 10 or 11, 64-bit, nothing else to install. On Linux, unpack
+the tarball and run `./FuturamaRecomp <your futurama.iso>` (a Vulkan driver is all it needs; saves go to
+`~/.local/share/FuturamaRecomp`).
 
 Built it yourself? Double-click works the same, or point it straight at your disc:
 
@@ -62,12 +64,25 @@ before or during play. No controller? The keyboard does it too (the physical key
 
 ## Building
 
-You need Windows, Visual Studio 2022 with the "Desktop development with C++" workload, and CMake 3.25 or newer.
+On Windows you need Visual Studio 2022 with the "Desktop development with C++" workload and CMake 3.25 or newer.
 
 ```
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 ```
+
+On Linux you need GCC 13 or Clang 17, CMake 3.25, SDL3's build dependencies (the list in SDL's
+README-linux) and [DXVK-native](https://github.com/doitsujin/dxvk/releases) 3.1.1
+(`dxvk-native-3.1.1-steamrt-sniper.tar.gz`), extracted somewhere; point `FUT_DXVK_ROOT` at its `usr` folder. SDL3 is
+fetched and built by CMake on both platforms.
+
+```
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFUT_DXVK_ROOT=/path/to/dxvk/usr
+cmake --build build -j
+cmake --install build --prefix dist
+```
+
+`dist/FuturamaRecomp` runs with SDL3 and DXVK's two libraries beside it; you need a Vulkan 1.3 driver.
 
 Have fun!
 
