@@ -11,7 +11,14 @@ constexpr char kMagic[] = "MICROSOFT*XBOX*MEDIA";
 constexpr u64 kPartitionOffsets[] = {0x0, 0x18300000, 0xFD90000, 0x2080000};   // XISO, XGD1, XGD2, XGD3
 constexpr u8 kAttrDirectory = 0x10;
 
-bool Seek(std::FILE* f, u64 offset) { return _fseeki64(f, static_cast<s64>(offset), SEEK_SET) == 0; }
+bool Seek(std::FILE* f, u64 offset) {                 // (64-bit offsets: a disc image is up to 7 GB)
+#ifdef _WIN32
+    return _fseeki64(f, static_cast<s64>(offset), SEEK_SET) == 0;
+#else
+    static_assert(sizeof(off_t) == 8, "the ISO reader needs 64-bit file offsets (_FILE_OFFSET_BITS=64)");
+    return fseeko(f, static_cast<off_t>(offset), SEEK_SET) == 0;
+#endif
+}
 }  // namespace
 
 std::string Xdvdfs::Normalize(const std::string& path) {

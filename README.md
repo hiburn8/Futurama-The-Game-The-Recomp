@@ -2,12 +2,11 @@
 
 # Futurama: The Game: The Recomp
 
-**Good news, everyone!** The 2003 Futurama game for the original Xbox now runs natively on Windows. No emulator,
-just a real Windows build.
+**Good news, everyone!** The 2003 Futurama game for the original Xbox now runs natively on Windows and Linux!
 
-I rebuilt the whole game in C++, one function at a time, straight from the original Xbox code (the `// orig:` comments point back to where each bit lives in the original).
-Graphics go through Direct3D 11, sound through XAudio2, and you can play with an Xbox, DualShock, Switch controller or
-keyboard.
+I rebuilt the whole game in C++, one function at a time, straight from the original Xbox code.
+Graphics go through Direct3D 11 (translated to Vulkan on Linux). Window management, audio and input are handled via
+SDL3, so you can bring your keyboard or Xbox / DualShock / Switch controller.
 
 The aim was 1:1 with the original. Same levels, same physics, same scripts, same timing, even the same random
 numbers, frame for frame. It's not a remake or a remaster. It's the same game, it just runs outside of the PS2/Xbox now.
@@ -74,11 +73,15 @@ Have fun!
 
 ## Quality-of-life improvements
 
-- **A language menu for the PAL disc.** The European Xbox release takes its language from the console's settings. The
+- **Render scaling.** The game's backend renderer faithfully upscales the scene quality dynamically based on the
+  resolution of your monitor. This results in a significantly sharper image with fewer artifacts. This default is
+  equivalent to `--render-scale auto`; `--render-scale 1` forces the original resolution.
+- **60 Hz for both discs.** The PAL version originally ran at 50 Hz. Regardless of which iso you supply (NTSC or PAL),
+  you'll get the improved 60 Hz experience.
+- **Revived the Language Menu from the PAL PS2 disc.** The European Xbox release takes its language from the console's settings. The
   PS2 version has a language menu at start-up, and its graphics are still on the Xbox discs, so I ported it. Pick
   English, French, German, Italian or Spanish and you get that language's text, speech and movies. The NTSC disc
   only has English speech, so it stays English.
-- **60 Hz on both discs.** The PAL game originally ran at 50 Hz. Here it runs at 60 Hz, like the NTSC one.
 - **A few of the original's bugs fixed.** The aim is 1:1, so any bug that changes what you see or how the game plays
   stays in. The only ones I fixed are where the original's result comes down to luck (memory it never sets up) or
   would crash the Xbox.

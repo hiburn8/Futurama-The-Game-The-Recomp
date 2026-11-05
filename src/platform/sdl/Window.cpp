@@ -13,10 +13,10 @@
 
 namespace fut::platform {
 namespace {
-
 bool g_sdlReady = false;
+}  // namespace
 
-bool InitSdl() {
+bool Window::InitSdl() {
     if (g_sdlReady) return true;
 #ifdef _WIN32
     // Xbox-class controllers through XInput only (not GameInput / Windows.Gaming.Input / raw input), so the values the
@@ -34,8 +34,6 @@ bool InitSdl() {
     g_sdlReady = true;
     return true;
 }
-
-}  // namespace
 
 Window::~Window() {
     if (window_) SDL_DestroyWindow(window_);
@@ -63,6 +61,10 @@ bool Window::Create(const std::string& title, u32 width, u32 height, bool visibl
     return true;
 }
 
+void Window::Show() {
+    if (window_) SDL_ShowWindow(window_);
+}
+
 void Window::SetFullscreen(bool on) {
     if (!window_ || on == fullscreen_) return;
     SDL_SetWindowFullscreenMode(window_, nullptr);     // (the borderless desktop mode, never an exclusive one)
@@ -82,7 +84,7 @@ HWND__* Window::NativeHandle() const {
     return static_cast<HWND__*>(SDL_GetPointerProperty(SDL_GetWindowProperties(window_),
                                                        SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
 #else
-    return nullptr;
+    return reinterpret_cast<HWND__*>(window_);         // (DXVK-native: the SDL_Window* stands in for the HWND)
 #endif
 }
 

@@ -5,7 +5,7 @@
 //
 //   fut_game <iso-or-folder> [--size WxH] [--windowed | --fullscreen] [--render-scale auto|<factor>]
 //            [--filter linear|nearest] [--saves <dir>]
-//   fut_game                       (no arguments, e.g. double-clicked: platform/win32/Launcher.h finds the disc)
+//   fut_game                       (no arguments, e.g. double-clicked: platform/sdl/Launcher.h finds the disc)
 //
 // The picture: the game renders the Xbox's 640 x 480 frame, which the device draws into the largest 4:3 rectangle of
 // the window, centred, black either side (render/xd3d/D3D11Device.h: Swap). The render scale (default auto) draws
@@ -26,14 +26,14 @@
 // Sound: the App's sound system App+0xF0 is the console's (game/sound/GameSound.h XboxSound: the ported sound layer
 // over the XAudio2 backend's hardware path VP -> GP -> EP, with default.xbe's tables and xbox/dsstdfx.bin; without an
 // audio device the same path renders offline and is dropped, so the game logic still sees voices end), with the
-// deterministic step-based voice status (XAudio2SoundBackend::Options::stepStatus; docs/analysis/level_sound_port.md
+// deterministic step-based voice status (SdlSoundBackend::Options::stepStatus; docs/analysis/level_sound_port.md
 // 3.4). The level's sounds play (scripts, characters, emitters, explosions, dialogue speech); see KNOWN_ISSUES for the
 // sites not restored yet.
 //
 // Drawn: the Intro's splash screens (legal, NI), the front end's loading screen, main menu scene and its options /
 // load / extras panels (the extras menus with the music list's render target), the levels with their loading screens
 // and titles, the pause menu with its options and load panels, the breakdown's scene, the yes / no dialog, the Death
-// screen, the movies (game/app/MoviePlayer.h on platform/win32/MovieService.h: the Intro's fox / vug / uds / intro,
+// screen, the movies (game/app/MoviePlayer.h on platform/sdl/MovieService.h: the Intro's fox / vug / uds / intro,
 // Attract, the level cutscenes, the extras' clips; YUY2 through the D3D11 backend's YuvEnable stand-in, the ADPCM audio
 // through the backend's streams).
 //
@@ -45,16 +45,13 @@
 #include "game/sound/GameSound.h"
 #include "game/text/TextObject.h"
 #include "platform/sdl/GamepadInput.h"
+#include "platform/sdl/Launcher.h"
+#include "platform/sdl/MovieService.h"
+#include "platform/sdl/SdlSoundBackend.h"
 #include "platform/sdl/Window.h"
-#include "platform/win32/Launcher.h"
-#include "platform/win32/MovieService.h"
-#include "platform/win32/XAudio2SoundBackend.h"
 #include "render/nixbox/NiXBoxRenderer.h"
 #include "render/xd3d/D3D11Device.h"
 
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -67,16 +64,7 @@ using namespace fut;
 
 namespace {
 
-std::filesystem::path SaveFolder() {
-    wchar_t* appData = nullptr;
-    size_t n = 0;
-    if (_wdupenv_s(&appData, &n, L"APPDATA") == 0 && appData) {
-        std::filesystem::path p = std::filesystem::path(appData) / L"FuturamaRecomp" / L"saves";
-        std::free(appData);
-        return p;
-    }
-    return std::filesystem::path(L"saves");
-}
+std::filesystem::path SaveFolder() { return platform::PrefFolder() / "saves"; }   // (%APPDATA%\FuturamaRecomp\saves)
 
 // The launcher's test of a disc it found (main's own checks below, without loading the image): opens, has a
 // default.xbe, and that is the NTSC-U or the PAL build.
@@ -147,10 +135,13 @@ int main(int argc, char** argv) {
     }
     const std::vector<u8>& xbeFile = xbe::GameImage().Bytes();
     platform::Window window;
-    if (!window.Create("Futurama", width, height, true, fullscreen)) return fail("window creation failed", 1);
+    if (!window.Create("Futurama", width, height, false, fullscreen)) return fail("window creation failed", 1);
+#ifndef _WIN32
+    setenv("DXVK_WSI_DRIVER", "SDL3", 1);             // (DXVK-native: its window system is SDL3's; read at device creation)
+#endif
     render::xd3d::D3D11Device device;                 // the decompiled renderer's D3D8 stream, executed
     device.SetRenderScale(renderScale);               // (before Init: the targets are made at the scale)
-    if (!device.Init(window.NativeHandle(), error)) return fail(error, 1);
+    if (!device.Init(window.NativeHandle(), window.Width(), window.Height(), error)) return fail(error, 1);
     device.SetFilter(filter);
     render::nixbox::NiXBoxRenderer renderer(device);  // the factory 0x0014C200 (App+0x104)
     platform::Gamepads gamepads;
@@ -159,9 +150,9 @@ int main(int argc, char** argv) {
     saves.readDisc = [&](const std::string& path, std::vector<u8>& out) { return vfs.ReadFile(path, out); };
     // orig: App::Init's XboxSoundSystem 0x000CCD90 (DirectSoundCreate, the effects image): the backend first, its
     // hardware data before the sound system's constructor downloads the effects image.
-    platform::XAudio2SoundBackend::Options audioOptions;
+    platform::SdlSoundBackend::Options audioOptions;
     audioOptions.stepStatus = true;
-    platform::XAudio2SoundBackend soundBackend(audioOptions);
+    platform::SdlSoundBackend soundBackend(audioOptions);
     bool soundOffline = false;
     if (!soundOffline && !soundBackend.Init()) {
         std::fprintf(stderr, "audio output unavailable: the sound layer runs offline (silent)\n");
@@ -212,6 +203,7 @@ int main(int argc, char** argv) {
         app.frame = f;
         app.qpc = platform::Window::Counter() - base;
         if (!app.Frame()) break;                      // (the App quits: no context requested)
+        if (f == 0) window.Show();                    // (the first frame is presented: no empty window before it)
         if (soundOffline) {                           // (offline: the published state rendered and dropped)
             soundDrop.clear();
             soundBackend.RenderFrames(25 * app.lastSteps, soundDrop);   // 800 samples per 1/60 s step

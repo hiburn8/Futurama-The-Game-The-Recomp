@@ -3,8 +3,8 @@
 // (structure: docs/analysis/sound_system.md); the generic and Xbox halves of each class are merged.
 //
 // The DirectSound calls are kept as a backend interface with the same calls and arguments (SoundBackend), so the
-// layer's output can be compared call for call with the original (tests/game/SoundSystemTests.cpp) and an XAudio2
-// backend can realise it (src/platform/win32/XAudio2SoundBackend.cpp).
+// layer's output can be compared call for call with the original (tests/game/SoundSystemTests.cpp) and the SDL
+// backend realises it (src/platform/sdl/SdlSoundBackend.cpp).
 //
 // Streaming samples (the music): each voice has its own IDirectSoundStream fed with ten packets of 0.3 s read from the
 // file in order and always wrapping (Refill 0x000CB640, once per voice update: the voice's NiUDSStream job pumped by

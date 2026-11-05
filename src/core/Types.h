@@ -5,6 +5,8 @@
 // giving its address in the Xbox default.xbe (NTSC-U, XDK 5233), which is also its name in the Ghidra database.
 #pragma once
 
+#include "core/Compat.h"
+
 #include <cstddef>
 #include <cstdint>
 

@@ -1,4 +1,4 @@
-# Futurama (Xbox, 2003) as a native Windows game: the release build, nothing else (no options, tests or
+# Futurama (Xbox, 2003) as a native Windows / Linux game: the release build, nothing else (no options, tests or
 # tools). Written by the original project's tools/export/export_clean.py from its release configuration.
 cmake_minimum_required(VERSION 3.25)
 project(FuturamaPC LANGUAGES C CXX)
@@ -11,7 +11,12 @@ if(MSVC)
     add_compile_options(/W4 /permissive- /utf-8 /Zc:__cplusplus)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 else()
-    add_compile_options(-Wall -Wextra)
+    # no fused multiply-adds (MSVC makes none), so the floats stay as on the Xbox; 64-bit file offsets for the ISO
+    add_compile_options(-Wall -Wextra -ffp-contract=off)
+    add_compile_definitions(_FILE_OFFSET_BITS=64)
+    set(CMAKE_INSTALL_RPATH "$ORIGIN")
+    set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--disable-new-dtags")   # (DT_RPATH: transitive)
 endif()
 # The static C / C++ runtime (/MT): the exe needs no VC++ redistributable, only DLLs that ship with Windows.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -21,8 +26,13 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 find_package(SDL3 CONFIG QUIET)
 if(NOT SDL3_FOUND)
     include(FetchContent)
-    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
-    set(SDL_STATIC ON CACHE BOOL "" FORCE)
+    if(WIN32)                                         # static: the one-exe release
+        set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+        set(SDL_STATIC ON CACHE BOOL "" FORCE)
+    else()                                            # shared: DXVK-native dlopens libSDL3.so.0 (the same SDL)
+        set(SDL_SHARED ON CACHE BOOL "" FORCE)
+        set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+    endif()
     set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
     set(SDL_TESTS OFF CACHE BOOL "" FORCE)
     set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -32,6 +42,14 @@ if(NOT SDL3_FOUND)
         GIT_TAG release-3.4.18
         GIT_SHALLOW TRUE)
     FetchContent_MakeAvailable(SDL3)
+endif()
+
+if(NOT WIN32)
+    set(FUT_DXVK_ROOT "" CACHE PATH "DXVK-native prefix (the release tarball's usr directory)")
+    find_path(DXVK_DIRECTX_INCLUDE_DIR d3d11_1.h HINTS "${FUT_DXVK_ROOT}/include/dxvk" REQUIRED)
+    find_path(DXVK_WINDOWS_INCLUDE_DIR windows_base.h HINTS "${FUT_DXVK_ROOT}/include/dxvk" REQUIRED)
+    find_library(DXVK_D3D11_LIBRARY NAMES dxvk_d3d11 HINTS "${FUT_DXVK_ROOT}/lib" "${FUT_DXVK_ROOT}/lib64" REQUIRED)
+    find_library(DXVK_DXGI_LIBRARY NAMES dxvk_dxgi HINTS "${FUT_DXVK_ROOT}/lib" "${FUT_DXVK_ROOT}/lib64" REQUIRED)
 endif()
 
 add_library(fut_core STATIC
@@ -155,14 +173,17 @@ target_include_directories(fut_core PRIVATE src)
 add_library(fut_render STATIC
     src/platform/sdl/Window.cpp
     src/platform/sdl/GamepadInput.cpp
-    src/platform/win32/Launcher.cpp
-    src/platform/win32/XAudio2SoundBackend.cpp
-    src/platform/win32/MovieService.cpp
+    src/platform/sdl/Launcher.cpp
+    src/platform/sdl/SdlSoundBackend.cpp
+    src/platform/sdl/MovieService.cpp
     src/render/TextureDecode.cpp
     src/render/xd3d/D3D11Device.cpp
 )
 target_include_directories(fut_render PRIVATE src)
-target_link_libraries(fut_render PUBLIC SDL3::SDL3-static fut_core)
+if(NOT WIN32)
+    target_include_directories(fut_render PUBLIC "${DXVK_DIRECTX_INCLUDE_DIR}" "${DXVK_WINDOWS_INCLUDE_DIR}")
+endif()
+target_link_libraries(fut_render PUBLIC $<IF:$<BOOL:${WIN32}>,SDL3::SDL3-static,SDL3::SDL3-shared> fut_core)
 
 add_executable(fut_game
     app/game/GameMain.cpp
@@ -172,4 +193,19 @@ if(MSVC)
     target_link_options(fut_game PRIVATE /ENTRY:mainCRTStartup)
 endif()
 target_include_directories(fut_game PRIVATE src)
-target_link_libraries(fut_game PRIVATE SDL3::SDL3-static fut_core fut_render winmm imm32 version setupapi dinput8 d3d11 dxgi d3dcompiler xinput xaudio2)
+if(WIN32)
+    target_link_libraries(fut_game PRIVATE SDL3::SDL3-static fut_core fut_render winmm imm32 version setupapi dinput8 d3d11 dxgi xinput)
+else()
+    target_link_libraries(fut_game PRIVATE SDL3::SDL3-shared fut_core fut_render "${DXVK_D3D11_LIBRARY}" "${DXVK_DXGI_LIBRARY}")
+endif()
+if(NOT WIN32)
+    install(TARGETS fut_game RUNTIME DESTINATION .)
+    foreach(lib "${DXVK_D3D11_LIBRARY}" "${DXVK_DXGI_LIBRARY}")
+        get_filename_component(real "${lib}" REALPATH)
+        get_filename_component(name "${lib}" NAME)
+        install(FILES "${real}" DESTINATION . RENAME "${name}.0")
+    endforeach()
+    if(TARGET SDL3-shared)
+        install(TARGETS SDL3-shared LIBRARY DESTINATION . NAMELINK_SKIP)
+    endif()
+endif()

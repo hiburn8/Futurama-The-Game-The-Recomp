@@ -2,7 +2,8 @@
 // +0x60), the disc's Video\*.xmv files read through the VFS (the player's NiUDSStream), the XMV library's platform calls
 // (video/xmv/XmvDecoder.h XmvPlatform): QueryPerformanceCounter, a 59.94 Hz display (D3DDevice_GetDisplayMode 60,
 // the VBlank count from the clock since the service's creation, alternating fields: L for the console's video mode),
-// the DirectSound streams of the sound backend (XAudio2SoundBackend's XAudio2Stream), Sleep.
+// the DirectSound streams of the sound backend (SdlSoundBackend's stream voices), Sleep; the clock and the
+// delay are SDL's (QueryPerformanceCounter and Sleep on Windows).
 #pragma once
 
 #include "core/fs/Vfs.h"

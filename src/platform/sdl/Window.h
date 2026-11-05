@@ -23,9 +23,11 @@ public:
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
 
-    // A window with a client area of width x height pixels (the windowed size; `fullscreen`: shown full screen
-    // instead). Initialises SDL's video and gamepad subsystems.
+    // A window with a client area of width x height pixels (the windowed size; `fullscreen`: full screen instead).
+    // `visible` false: created hidden, shown by Show() (the game shows it after its first frame is presented, so no
+    // empty window appears while the disc loads). Initialises SDL's video and gamepad subsystems.
     bool Create(const std::string& title, u32 width, u32 height, bool visible, bool fullscreen = false);
+    void Show();
     // Borderless full screen on the window's display, or back to the windowed size and place (Alt+Enter does this;
     // Resized() reports the change).
     void SetFullscreen(bool on);
@@ -34,10 +36,14 @@ public:
     // Per-monitor DPI awareness for the process: call before any window (the launcher's dialog too), so the client
     // area is in physical pixels and Windows never scales the picture itself.
     static void SetDpiAware();
+    // SDL's video and gamepad subsystems, once (Create does it; the launcher's dialog needs it before any window).
+    static bool InitSdl();
     // Handles pending events; false once the window was closed.
     bool Pump();
     SDL_Window* Handle() const { return window_; }
-    HWND__* NativeHandle() const;                      // the HWND (Windows: the swap chain's window)
+    // The swap chain's window: the HWND on Windows; elsewhere the SDL_Window* itself, which DXVK-native takes in
+    // the HWND's place (its SDL3 WSI).
+    HWND__* NativeHandle() const;
     u32 Width() const { return width_; }
     u32 Height() const { return height_; }
     bool Resized() { const bool r = resized_; resized_ = false; return r; }
