@@ -10,13 +10,12 @@ SDL3, so you can bring your keyboard or Xbox / DualShock / Switch controller.
 
 The aim was 1:1 with the original. Same levels, same physics, same scripts, same timing, even the same random
 numbers, frame for frame. It's not a remake or a remaster. It's the same game, it just runs outside of the PS2/Xbox now.
-Automated full playthroughs, replayed on the port and on the original running in an emulator, confirm it is
-frame-perfect end to end: all 752,000 frames of the game match.
+Automated full playthroughs, replayed on this port and on the original via emulator, confirm it is frame-perfect
+start to finish: all 752,000 frames of a complete playthrough match.
 
-It's not an automatic translation of the disc either. All of the game's code is right here in this repo, written out
-in C++, and it's what gets compiled into the exe. Nothing from the disc's executable gets translated or run as game
-code. The disc is only read for the stuff that can't be shared: the models, textures, sounds, music, movies, level
-scripts, text, and some data tables stored inside the original `default.xbe`.
+It's not an automatic translation of the disc (a static recomp). All of the game's code is decompiled right here in
+this repo, written out in C++, and it's what gets compiled into the exe. Nothing from the disc's executable gets
+translated or run as game code.
 
 ### You'll need your own copy
 
@@ -26,18 +25,13 @@ scripts get loaded from that when you play.
 
 ## Playing
 
-The easy way: grab the zip from the [Releases](../../releases) page, unzip it anywhere and double-click
-`FuturamaRecomp.exe`. The first time, it asks for your disc image (pick your `.iso`, or the `default.xbe` inside your
-extracted folder) and remembers it from then on. Put the `.iso` (or a `futurama` folder with the extracted files)
-right next to the exe and it finds it by itself. Windows 10 or 11, 64-bit, nothing else to install. On Linux, unpack
-the tarball and run `./FuturamaRecomp <your futurama.iso>` (a Vulkan driver is all it needs; saves go to
-`~/.local/share/FuturamaRecomp`).
+Grab the build for your system from the [Releases](../../releases) page.
 
-Built it yourself? Double-click works the same, or point it straight at your disc:
+**Windows.** Unzip it anywhere and double-click `FuturamaRecomp.exe`. The first time, it asks for your disc image
+(your `.iso`, or the `default.xbe` of an extracted disc) and remembers it from then on. Windows 10 or 11, 64-bit,
+nothing else to install.
 
-```
-build\Release\FuturamaRecomp.exe <your futurama.iso or extracted folder>
-```
+**Linux.** Unpack the tarball and run `./FuturamaRecomp <your futurama.iso>`. A Vulkan driver is all it needs.
 
 It starts full screen at your screen's resolution, 4:3 with black bars; Alt+Enter toggles a window. Options:
 
@@ -47,7 +41,7 @@ It starts full screen at your screen's resolution, 4:3 with black bars; Alt+Ente
 | `--size 1920x1080` | the window size |
 | `--render-scale 1` | the original 640x480 picture scaled up (`2` = 1280x960, default `auto` = your screen) |
 | `--filter nearest` | crisp unfiltered pixels instead of smooth scaling |
-| `--saves <folder>` | where saves go (default `%APPDATA%\FuturamaRecomp\saves`) |
+| `--saves <folder>` | where saves go (default `%APPDATA%\FuturamaRecomp\saves`, or `~/.local/share/FuturamaRecomp/saves` on Linux) |
 
 An Xbox controller just works, and so do most other pads (DualShock, DualSense, Switch Pro and the like), plugged in
 before or during play. No controller? The keyboard does it too (the physical keys, on any layout):
@@ -93,7 +87,7 @@ Have fun!
   equivalent to `--render-scale auto`; `--render-scale 1` forces the original resolution.
 - **60 Hz for both discs.** The PAL version originally ran at 50 Hz. Regardless of which iso you supply (NTSC or PAL),
   you'll get the improved 60 Hz experience.
-- **Revived the Language Menu from the PAL PS2 disc.** The European Xbox release takes its language from the console's settings. The
+- **🇬🇧 🇫🇷 🇩🇪 🇮🇹 🇪🇸 Revived the Language Menu from the PAL PS2 disc.** The European Xbox release takes its language from the console's settings. The
   PS2 version has a language menu at start-up, and its graphics are still on the Xbox discs, so I ported it. Pick
   English, French, German, Italian or Spanish and you get that language's text, speech and movies. The NTSC disc
   only has English speech, so it stays English.
