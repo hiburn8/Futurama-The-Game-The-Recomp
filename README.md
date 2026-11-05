@@ -106,3 +106,7 @@ Have fun!
 | Crashes only bad data could cause (missing objects, dividing by zero, broken files, running out of memory) | Fixed |
 
 </details>
+
+## Contributors
+
+- [igno2k](https://github.com/igno2k)
