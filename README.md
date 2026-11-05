@@ -33,7 +33,7 @@ nothing else to install.
 
 **Linux.** Unpack the tarball and run `./FuturamaRecomp <your futurama.iso>`. A Vulkan driver is all it needs.
 
-It starts full screen at your screen's resolution, 4:3 with black bars; Alt+Enter toggles a window. Options:
+It starts full screen at your screen's resolution, 4:3 with black bars; Alt+Enter toggles windowed mode. Options:
 
 | Option | Effect |
 | --- | --- |
@@ -58,14 +58,14 @@ before or during play. No controller? The keyboard does it too (the physical key
 
 ## Building
 
-On Windows you need Visual Studio 2022 with the "Desktop development with C++" workload and CMake 3.25 or newer.
+**Windows.** You need Visual Studio 2022 with the "Desktop development with C++" workload and CMake 3.25 or newer.
 
 ```
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 ```
 
-On Linux you need GCC 13 or Clang 17, CMake 3.25, SDL3's build dependencies (the list in SDL's
+**Linux.** You need GCC 13 or Clang 17, CMake 3.25, SDL3's build dependencies (the list in SDL's
 README-linux) and [DXVK-native](https://github.com/doitsujin/dxvk/releases) 3.1.1
 (`dxvk-native-3.1.1-steamrt-sniper.tar.gz`), extracted somewhere; point `FUT_DXVK_ROOT` at its `usr` folder. SDL3 is
 fetched and built by CMake on both platforms.
@@ -82,16 +82,16 @@ Have fun!
 
 ## Quality-of-life improvements
 
-- **Render scaling.** The game's backend renderer faithfully upscales the scene quality dynamically based on the
+- **🖥️ Render scaling.** The game's backend renderer faithfully upscales the scene quality dynamically based on the
   resolution of your monitor. This results in a significantly sharper image with fewer artifacts. This default is
   equivalent to `--render-scale auto`; `--render-scale 1` forces the original resolution.
-- **60 Hz for both discs.** The PAL version originally ran at 50 Hz. Regardless of which iso you supply (NTSC or PAL),
+- **⚡ 60 Hz for both discs.** The PAL version originally ran at 50 Hz. Regardless of which iso you supply (NTSC or PAL),
   you'll get the improved 60 Hz experience.
-- **🇬🇧 🇫🇷 🇩🇪 🇮🇹 🇪🇸 Revived the Language Menu from the PAL PS2 disc.** The European Xbox release takes its language from the console's settings. The
+- **🌐 Revived the Language Menu from the PAL PS2 disc.** The European Xbox release takes its language from the console's settings. The
   PS2 version has a language menu at start-up, and its graphics are still on the Xbox discs, so I ported it. Pick
   English, French, German, Italian or Spanish and you get that language's text, speech and movies. The NTSC disc
   only has English speech, so it stays English.
-- **A few of the original's bugs fixed.** The aim is 1:1, so any bug that changes what you see or how the game plays
+- **🐛 A few of the original's bugs fixed.** The aim is 1:1, so any bug that changes what you see or how the game plays
   stays in. The only ones I fixed are where the original's result comes down to luck (memory it never sets up) or
   would crash the Xbox.
 
