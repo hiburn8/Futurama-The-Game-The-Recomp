@@ -41,7 +41,7 @@ It starts full screen at your screen's resolution, 4:3 with black bars; Alt+Ente
 | `--size 1920x1080` | the window size |
 | `--render-scale 1` | the original 640x480 picture scaled up (`2` = 1280x960, default `auto` = your screen) |
 | `--filter nearest` | crisp unfiltered pixels instead of smooth scaling |
-| `--aspect 16:9` | widescreen (also `16:10`, `21:9`, `auto` = your screen's shape): more world at the sides, the HUD at the edges, movies and splashes centred (default `4:3`; see below) |
+| `--aspect 16:9` | widescreen, up to super-ultrawide (`16:10`, `21:9`, `32:9`, any `w:h`, or `auto` = your screen's shape): more world at the sides, the HUD at the edges, movies and splashes centred (default `4:3`; see below) |
 | `--saves <folder>` | where saves go (default `%APPDATA%\FuturamaRecomp\saves`, or `~/.local/share/FuturamaRecomp/saves` on Linux) |
 
 An Xbox controller just works, and so do most other pads (DualShock, DualSense, Switch Pro and the like), plugged in
@@ -86,9 +86,11 @@ Have fun!
 - **🖥️ Render scaling.** The game's backend renderer faithfully upscales the scene quality dynamically based on the
   resolution of your monitor. This results in a significantly sharper image with fewer artifacts. This default is
   equivalent to `--render-scale auto`; `--render-scale 1` forces the original resolution.
-- **📺 Widescreen.** `--aspect 16:9` (or `16:10`, `21:9`, `auto` for your screen's shape) renders a wider picture:
-  the same vertical view with more world at the sides, the HUD anchored to the edges instead of stretched, movies
-  and the 4:3 artwork centred with black beside them. It's opt-in and stays off by default (4:3): the levels were
+- **📺 Widescreen, ultrawide and super-ultrawide.** `--aspect 16:9` renders a wider picture: the same vertical
+  view with more world at the sides, the HUD anchored to the edges instead of stretched, movies and the 4:3 artwork
+  centred with black beside them. Any shape from 4:3 to 32:9 works: `16:10` (Steam Deck), `21:9` ultrawide, `32:9`
+  super-ultrawide, or any `w:h`; `auto` takes your screen's exact shape, which is the right choice for an ultrawide
+  (their real ratio is rarely the nominal 21:9). It's opt-in and stays off by default (4:3): the levels were
   built for a 4:3 view, so you may see their edges, backdrops ending, or characters waiting off-stage. The 4:3
   picture is untouched by it, byte for byte.
 - **⚡ 60 Hz for both discs.** The PAL version originally ran at 50 Hz. Regardless of which iso you supply (NTSC or PAL),
