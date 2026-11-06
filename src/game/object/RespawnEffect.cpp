@@ -314,6 +314,7 @@ bool ChargeUpEffect::Init() {                         // orig: vf04 0x00066380
     const double x1 = x0 + w;
     const NiPoint3 v[4] = {{F(x0), F(y1), 0.0f}, {F(x1), F(y1), 0.0f}, {F(x1), F(y0), 0.0f}, {F(x0), F(y0), 0.0f}};
     polygon = new ni::NiScreenPolygon(4, v, uv, nullptr);   // new(0x24) 0x00106DE0
+    polygon->anchor = ni::ScreenAnchor::Left;         // (port: the widescreen option: it ends at the HUD's charge slots)
     {                                                 // new(0x3C) 0x00109DC0: SetBaseTexture(D+0x18) 0x0001D610, apply
         ni::NiPointer<ni::NiTexturingProperty> tex = MakeTexturing(d.texture.Get());   // mode 2, filter 1 (0x0001D6B0)
         polygon->AttachProperty(tex.Get());           // (the polygon's property state, vf2C's slot)

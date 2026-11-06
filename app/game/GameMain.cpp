@@ -4,7 +4,7 @@
 // port 0 (or the keyboard: Window's KeyboardGamepad).
 //
 //   fut_game <iso-or-folder> [--size WxH] [--windowed | --fullscreen] [--render-scale auto|<factor>]
-//            [--filter linear|nearest] [--saves <dir>]
+//            [--filter linear|nearest] [--aspect auto|4:3|16:9|16:10|21:9|<w>:<h>] [--saves <dir>]
 //   fut_game                       (no arguments, e.g. double-clicked: platform/sdl/Launcher.h finds the disc)
 //
 // The picture: the game renders the Xbox's 640 x 480 frame, which the device draws into the largest 4:3 rectangle of
@@ -14,6 +14,11 @@
 // (docs/analysis/render_scale_plan.md). The window starts borderless full screen on its monitor; Alt+Enter toggles
 // a window of the windowed size (--size WxH, default 1280x960; --size or --windowed start windowed;
 // platform/sdl/Window.h: SDL3 for the window, the keyboard and the controllers).
+//
+// --aspect (default 4:3, the original's picture; docs/analysis/widescreen_plan.md): a wider canvas, round(480 x
+// aspect) x 480 (auto: the window's own shape, so a 16:9 screen is filled without bars), with more world at the
+// sides (Hor+), the HUD at the edges, movies and the 4:3 pictures centred with black beside them
+// (engine/ni/ScreenCanvas.h). Opt-in: the levels were built for 4:3 and may show their edges.
 //
 // The release build is a Windows-subsystem program (no console window when double-clicked; started from a terminal
 // it writes to that terminal); its errors also go to message boxes.
@@ -39,6 +44,7 @@
 //
 #include "core/XbeImage.h"
 #include "core/fs/Vfs.h"
+#include "engine/ni/ScreenCanvas.h"
 #include "game/app/App.h"
 #include "game/app/MemoryCards.h"
 #include "game/app/SaveStorage.h"
@@ -53,6 +59,8 @@
 #include "render/xd3d/D3D11Device.h"
 
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -94,7 +102,8 @@ int main(int argc, char** argv) {
     std::string source = argc >= 2 ? argv[1] : platform::FindDisc(CheckDisc);   // the disc image / folder
     if (argc < 2 && source.empty()) {                 // (no argument and the dialog cancelled)
         std::fprintf(stderr, "usage: fut_game <iso-or-folder> [--size WxH] [--windowed | --fullscreen]"
-                             " [--render-scale auto|<factor>] [--filter linear|nearest] [--saves <dir>]");
+                             " [--render-scale auto|<factor>] [--filter linear|nearest]"
+                             " [--aspect auto|4:3|16:9|16:10|21:9|<w>:<h>] [--saves <dir>]");
         std::fputs("\n", stderr);
         return 2;
     }
@@ -102,6 +111,7 @@ int main(int argc, char** argv) {
     bool fullscreen = true;                           // (--size / --windowed: a window; --fullscreen: full screen)
     render::xd3d::D3D11Device::Filter filter = render::xd3d::D3D11Device::Filter::Linear;   // (--filter)
     double renderScale = 0;                           // (--render-scale: 0 = auto)
+    double aspect = 4.0 / 3.0;                        // (--aspect: the canvas's shape; 0 = auto, the window's)
     std::filesystem::path saveDir = SaveFolder();     // (--saves <dir>)
     for (int i = 2; i < argc; ++i) {
         const std::string a = argv[i];
@@ -118,6 +128,12 @@ int main(int argc, char** argv) {
             if (f == "nearest") filter = render::xd3d::D3D11Device::Filter::Nearest;
             else if (f == "linear") filter = render::xd3d::D3D11Device::Filter::Linear;
             else return fail("--filter takes linear or nearest", 2);
+        } else if (a == "--aspect" && i + 1 < argc) {
+            const std::string s = argv[++i];
+            unsigned w = 0, h = 0;
+            if (s == "auto") aspect = 0;
+            else if (std::sscanf(s.c_str(), "%u:%u", &w, &h) == 2 && w > 0 && h > 0) aspect = double(w) / h;
+            else return fail("--aspect takes auto, 4:3, 16:9, 16:10, 21:9 or <w>:<h>", 2);
         } else if (a == "--saves" && i + 1 < argc) saveDir = argv[++i];
         else {
             return fail(std::string("unknown option (or its value missing): ") + argv[i], 2);
@@ -140,6 +156,13 @@ int main(int argc, char** argv) {
     setenv("DXVK_WSI_DRIVER", "SDL3", 1);             // (DXVK-native: its window system is SDL3's; read at device creation)
 #endif
     render::xd3d::D3D11Device device;                 // the decompiled renderer's D3D8 stream, executed
+    {   // the canvas (engine/ni/ScreenCanvas.h): 640 x 480, or round(480 x aspect) rounded to even, 4:3 .. 32:9
+        if (aspect <= 0) aspect = double(window.Width()) / std::max(window.Height(), 1u);
+        aspect = std::clamp(aspect, 4.0 / 3.0, 32.0 / 9.0);
+        const u32 w = u32(std::lround(480.0 * aspect / 2.0) * 2);
+        ni::ScreenCanvas::width = w;
+        device.SetCanvasSize(w, ni::ScreenCanvas::kHeight);   // (before Init: the frame buffers are made at the size)
+    }
     device.SetRenderScale(renderScale);               // (before Init: the targets are made at the scale)
     if (!device.Init(window.NativeHandle(), window.Width(), window.Height(), error)) return fail(error, 1);
     device.SetFilter(filter);

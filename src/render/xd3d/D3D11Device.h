@@ -43,8 +43,9 @@ public:
     void SetFilter(Filter filter);
     // The render scale (docs/analysis/render_scale_plan.md): every render target (the back buffer, its depth, the
     // rendered textures) is round(logical x factor) pixels behind the logical size the game sees; the game's D3D8
-    // stream is unchanged. factor <= 0 = auto: the canvas is the window's 4:3 rectangle (so Swap draws 1:1), following
-    // every Resize; 1 = the Xbox's 640 x 480. May be called before or after Init.
+    // stream is unchanged. factor <= 0 = auto: the canvas is the window's rectangle of its own shape (so Swap draws
+    // 1:1; the physical size snaps to the window within a pixel), following every Resize; 1 = the Xbox's 640 x 480
+    // (or the widescreen canvas's size, XD3DDevice::SetCanvasSize). May be called before or after Init.
     void SetRenderScale(double factor);
     double RenderScale() const;
     u32 draws() const { return draws_; }

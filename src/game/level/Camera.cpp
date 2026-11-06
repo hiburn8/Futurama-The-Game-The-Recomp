@@ -1547,6 +1547,7 @@ void Camera::Apply() {                                // orig: 0x00012210
     if (dirtyFrustum) {                               // orig: SetFrustum 0x00011960 (a culling input)
         const f32 f[6] = {F(-double(halfWidth)), halfWidth, halfHeight, F(-double(halfHeight)), 0.25f, farPlane};
         cam->SetFrustum(f);
+        ni::ScreenCanvas::Widen(*cam);                // (port: the widescreen option's Hor+; nothing at 4:3)
         dirtyFrustum = 0;
     }
     if (dirtyTranslate) {

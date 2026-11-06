@@ -72,6 +72,7 @@ add_library(fut_core STATIC
     src/engine/ni/NiAnimation.cpp
     src/engine/ni/NiKeyframeManager.cpp
     src/engine/ni/NiRenderState.cpp
+    src/engine/ni/ScreenCanvas.cpp
     src/engine/stream/StreamManager.cpp
     src/game/text/LanguageDb.cpp
     src/game/text/TextLayout.cpp

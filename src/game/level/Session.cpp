@@ -671,6 +671,7 @@ void LoadingScreen::Base(ni::NiRenderer* renderer, const ReadFileFn* readFile, c
     CutImage(*this, image.Get(), cut);                // 0x000EE9A0
     for (s32 i = 0; i < 6; ++i) {
         tiles[i] = new ni::NiScreenTexture(cut[i].Get());   // new(0x20) 0x0010B2E0
+        tiles[i]->anchor = ni::ScreenAnchor::Centre;  // (port: the widescreen option: the 640-wide picture, centred)
         // (H) the width and height arguments are top + 256 and left + 256 (as in the original)
         const s16 top = s16((i / 3) << 8), left = s16((i % 3) << 8);
         tiles[i]->AddRect(top, left, u16(top + 0x100), u16(left + 0x100), 0 /* +0xC */, 0, kWhite);
@@ -697,6 +698,7 @@ void LoadingScreen::Derived(const ReadFileFn* readFile) {   // orig: 0x000EFBF0 
     }
     spinnerFrame = 0;                                 // +0x50
     spinnerTexture = new ni::NiScreenTexture(spinnerFrames[0].Get());   // frames[+0x50]
+    spinnerTexture->anchor = ni::ScreenAnchor::Centre;   // (port: the widescreen option: on the centred picture)
     spinnerTexture->AddRect(0x145, 0x21C, 0x40, 0x80, 0, 0, kWhite);
     spinnerTexture->texturing->applyMode = 2;
     if (spinner) camera->AddScreenTexture(spinnerTexture.Get());

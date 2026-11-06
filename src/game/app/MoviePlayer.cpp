@@ -217,6 +217,7 @@ bool MoviePlayer::Open(const char* name) {            // orig: 0x000EE2B0
     const ni::NiPoint3 v[4] = {{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}};
     const ni::NiPoint2 uv[4] = {{0, fh}, {fw, fh}, {fw, 0}, {0, 0}};
     polygon_ = new ni::NiScreenPolygon(4, v, uv, nullptr);
+    polygon_->anchor = ni::ScreenAnchor::Centre;      // (port: the widescreen option: the 4:3 frames, pillarboxed)
     auto* tex = new ni::NiTexturingProperty;          // new(0x3C) 0x00109DC0
     tex->applyMode = 0;                               // +0x18 = 0 (REPLACE)
     if (!tex->HasMap(0)) tex->SetBaseTexture(nullptr);   // SetBaseFilterMode(1) 0x0001D6B0 (makes the base map)

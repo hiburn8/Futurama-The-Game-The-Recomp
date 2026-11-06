@@ -82,6 +82,7 @@ ni::NiPointer<ni::NiScreenPolygon> ErrorOverlay::MakeIcon(ni::NiObject* texture,
     const double T = 1.0 - double(y) * kInv480;       // FSUBR [0x00293A98] 1.0
     const ni::NiPoint3 v[4] = {{F(L), F(T - H), 0}, {F(L + W), F(T - H), 0}, {F(L + W), F(T), 0}, {F(L), F(T), 0}};
     ni::NiPointer<ni::NiScreenPolygon> p(new ni::NiScreenPolygon(4, v, kUV, nullptr));   // new(0x24) 0x00106DE0
+    p->anchor = ni::ScreenAnchor::Centre;             // (port: the widescreen option: placed on the 4:3 picture)
     auto* t = new ni::NiTexturingProperty;            // new(0x3C) 0x00109DC0: apply mode 2 (+0x18)
     t->applyMode = 2;
     if (!t->HasMap(0)) t->SetBaseTexture(nullptr);    // SetBaseFilterMode(1) 0x0001D6B0 (makes the base map)

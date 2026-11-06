@@ -105,7 +105,22 @@ TextObject* TextObject::Create(u32 font, const ReadFileFn& readFile, ni::NiRende
     t->SetZBufferTest(false);                         // 0x00099660(0)
     t->dirty = 1;                                     // +0x79
     t->SetRenderer(renderer);                         // 0x00098F80(App->vf14())
+    t->SetAnchor(ni::ScreenAnchor::Centre);           // (port: the widescreen option's default; nothing at 4:3)
     return t;
+}
+
+void TextObject::SetAnchor(ni::ScreenAnchor a) {
+    anchor = a;
+    if (!ni::ScreenCanvas::Wide() || sceneMode || !camera) return;
+    // the frustum (0, 0.1, 0.1, 0): one unit of the view plane = the 640-wide picture; the canvas is k units wide
+    const double k = ni::ScreenCanvas::Expansion();
+    double left = 0.0;                                // Left (and None): the picture from the left edge
+    if (a == ni::ScreenAnchor::Right) left = -0.1 * (k - 1.0);
+    else if (a == ni::ScreenAnchor::Centre) left = -0.05 * (k - 1.0);
+    const f32 frustum[6] = {f32(left), f32(left + 0.1 * k), 0.1f, 0.0f, 1.0f, 100.0f};
+    camera->SetFrustum(frustum);
+    camera->UpdateDownwardPass(0.0f, true);           // (the projection follows, as SetRenderer's update)
+    dirty = 1;
 }
 
 void TextObject::SetRenderer(ni::NiRenderer* renderer) {   // orig: 0x00098F80

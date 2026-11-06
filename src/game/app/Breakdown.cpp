@@ -198,6 +198,7 @@ Breakdown::Breakdown(App& a) : app(a) {               // orig: 0x000A4E70
     if (!cameraNode) return;
     camera = FindAs<ni::NiCamera>(scene.Get(), "CAMERA1");    // +0x24 (RTTI 0x002F9120)
     if (!camera) return;
+    ni::ScreenCanvas::Widen(*camera);                 // (port: the widescreen option's Hor+ of the file's frustum)
     for (const char* g : {"glow1Shape", "glowShape2"})    // (RTTI 0x002F9190) hidden: +0xB0 |= 1
         if (auto* o = FindAs<ni::NiAVObject>(scene.Get(), g)) o->flags = u16(o->flags | ni::kNiAVHidden);
     camera->renderer = app.services.renderer;         // +0x1A8 = App->vf14(); +0x15C = the scene (the Click's)

@@ -641,6 +641,7 @@ ViewFile::ViewFile(std::string p, const char* owner, s32 w, ni::NiRenderer* rend
     camera = new ni::NiCamera;                        // new(0x250) 0x001009D0
     camera->renderer = renderer;                      // (+0x1A8) = App->vf14()
     camera->SetFrustum(frustum);                      // 0x00011960
+    ni::ScreenCanvas::Widen(*camera);                 // (port: the widescreen option's Hor+; nothing at 4:3)
     std::memcpy(collectKey.data(), "BD_COLLECT", 11); // (11 bytes from 0x00297404)
     std::memcpy(killsKey.data(), "BD_KILLS", 9);      // (9 bytes from 0x002973F8)
     // (the request: vf02 0x00046210, called by the Player constructor)

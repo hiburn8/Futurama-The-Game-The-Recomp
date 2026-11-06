@@ -45,6 +45,10 @@ XD3DDevice::XD3DDevice() {
 
 XD3DDevice::~XD3DDevice() = default;
 
+void XD3DDevice::SetCanvasSize(u32 width, u32 height) {
+    for (Resource* s : frameBuffers_) s->width = width, s->height = height;
+}
+
 Resource* XD3DDevice::NewResource(ResourceKind kind) {
     auto r = std::make_unique<Resource>();
     r->kind = kind;

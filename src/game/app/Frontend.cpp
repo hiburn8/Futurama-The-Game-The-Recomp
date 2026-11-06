@@ -385,6 +385,7 @@ void FrontendContext::SetupCamera() {                 // orig: 0x00023A30
     camera_ = FindAs<ni::NiCamera>(root_.Get(), "Cam3");   // +0x68 (RTTI 0x002F9120)
     if (camera_) {                                    // (the original writes without a test)
         camera_->renderer = app_.services.renderer;   // +0x15C = the root (the Click's scene), +0x1A8 = App->vf14()
+        ni::ScreenCanvas::Widen(*camera_);            // (port: the widescreen option's Hor+ of the file's frustum)
         camera_->UpdateDownwardPass(0.0f, true);      // Update(0, 1)
         camera_->UpdateProperties();
         camera_->UpdateEffects();

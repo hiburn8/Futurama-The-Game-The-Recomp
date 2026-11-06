@@ -23,6 +23,7 @@
 #include <bit>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <set>
@@ -232,9 +233,11 @@ struct D3D11Device::Impl {
     ComPtr<ID3D11RasterizerState> blitRaster;
     Filter filter = Filter::Linear;
     // The render scale (D3D11Device.h SetRenderScale; docs/analysis/render_scale_plan.md): every target's texture is
-    // round(logical x scale) pixels behind the logical size the game sees; `auto` follows the window's 4:3 rectangle
-    // (Resize), so the presentation draws 1:1. Without a window (offscreen) auto is 1.
-    double scale = 1.0;
+    // round(logical x scale) pixels behind the logical size the game sees; `auto` follows the window's rectangle of the
+    // canvas's shape (Resize), so the presentation draws 1:1. Without a window (offscreen) auto is 1. The scale is per
+    // axis only for auto's snap to the window (a canvas whose rounded width is not quite the window's shape, e.g. the
+    // widescreen option's 854 x 480 at 1920 x 1080: within a pixel the physical size is the window's, not a bar).
+    double scaleX = 1.0, scaleY = 1.0;
     bool autoScale = true;
     double fixedScale = 1.0;
     struct Target {                                   // a D3D11 view of a colour / depth resource
@@ -247,9 +250,9 @@ struct D3D11Device::Impl {
         bool depth = false;
     };
     std::unordered_map<const Resource*, Target> targets;   // render targets (the back buffer, rendered textures)
-    u32 Physical(u32 logical) const { return std::max(u32(std::lround(logical * scale)), 1u); }
+    static u32 Physical(u32 logical, double scale) { return std::max(u32(std::lround(logical * scale)), 1u); }
     bool MakeTarget(const Resource* key, bool depth, Target& t);
-    void ApplyScale(double s);                        // re-makes every target at the new scale (colour content kept)
+    void ApplyScale(double sx, double sy);            // re-makes every target at the new scale (colour content kept)
     // A textured quad over the viewport of `rtv` (the blit shaders): the presentation and the scale's copies.
     void DrawQuad(ID3D11RenderTargetView* rtv, const D3D11_VIEWPORT& v, ID3D11ShaderResourceView* src,
                   ID3D11SamplerState* sampler);
@@ -377,7 +380,7 @@ bool D3D11Device::Init(HWND__* window, u32 width, u32 height, std::string& error
 bool D3D11Device::Impl::MakeTarget(const Resource* key, bool depth, Target& t) {
     t.depth = depth;
     t.width = std::max(key->width, 1u), t.height = std::max(key->height, 1u);
-    t.physicalWidth = Physical(t.width), t.physicalHeight = Physical(t.height);
+    t.physicalWidth = Physical(t.width, scaleX), t.physicalHeight = Physical(t.height, scaleY);
     D3D11_TEXTURE2D_DESC td = {};
     td.Width = t.physicalWidth, td.Height = t.physicalHeight, td.MipLevels = 1, td.ArraySize = 1;
     td.SampleDesc.Count = 1;
@@ -413,9 +416,9 @@ D3D11Device::Impl::Target* D3D11Device::Impl::DepthTarget(Resource* r) {
     return &(targets[r] = std::move(t));
 }
 
-void D3D11Device::Impl::ApplyScale(double s) {
-    if (s == scale || !device) return;
-    scale = s;
+void D3D11Device::Impl::ApplyScale(double sx, double sy) {
+    if ((sx == scaleX && sy == scaleY) || !device) return;
+    scaleX = sx, scaleY = sy;
     ctx->OMSetRenderTargets(0, nullptr, nullptr);
     for (auto& [key, old] : targets) {               // (in place: the map's nodes, and so the pointers, stay)
         Target t;
@@ -668,17 +671,21 @@ void D3D11Device::SetRenderScale(double factor) {
     d.fixedScale = d.autoScale ? 1.0 : factor;
     if (!d.device) return;
     if (!d.autoScale) {
-        d.ApplyScale(d.fixedScale);
-    } else if (d.swapChain) {                         // the window's 4:3 rectangle, in canvas units
+        d.ApplyScale(d.fixedScale, d.fixedScale);
+    } else if (d.swapChain) {                         // the window's rectangle of the canvas's shape, in canvas units
         const Resource* bb = backBuffer();
-        d.ApplyScale(std::min(double(d.windowWidth) / std::max(bb->width, 1u),
-                              double(d.windowHeight) / std::max(bb->height, 1u)));
+        const u32 w = std::max(bb->width, 1u), h = std::max(bb->height, 1u);
+        const double s = std::min(double(d.windowWidth) / w, double(d.windowHeight) / h);
+        // (the snap: an axis whose fitted size is within a pixel of the window's takes the window's exactly)
+        const bool snapX = std::labs(std::lround(w * s) - long(d.windowWidth)) <= 1;
+        const bool snapY = std::labs(std::lround(h * s) - long(d.windowHeight)) <= 1;
+        d.ApplyScale(snapX ? double(d.windowWidth) / w : s, snapY ? double(d.windowHeight) / h : s);
     } else {
-        d.ApplyScale(1.0);                            // (offscreen: no window to follow)
+        d.ApplyScale(1.0, 1.0);                       // (offscreen: no window to follow)
     }
 }
 
-double D3D11Device::RenderScale() const { return impl_->scale; }
+double D3D11Device::RenderScale() const { return impl_->scaleX; }
 
 void D3D11Device::DrawVertices(u32 primitive, u32 start, u32 count) {
     XD3DDevice::DrawVertices(primitive, start, count);

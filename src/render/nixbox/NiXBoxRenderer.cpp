@@ -39,11 +39,12 @@ constexpr u32 kPrimitiveIndices[11][2] = {{0, 0}, {1, 0}, {2, 0}, {1, 1}, {1, 1}
 NiXBoxRenderer::NiXBoxRenderer(XD3DDevice& device) : d3d_(device) {
     // orig: 0x0014C200 / Direct3D_CreateDevice (InitializeD3dState) / 0x0014AB40 (the frame buffers' descs)
     d3d_.InitializeState();
-    backBuffer_.width = 640, backBuffer_.height = 480;
+    // (640 x 480, or the widescreen option's canvas: the device's frame buffers, ScreenCanvas.h)
+    backBuffer_.width = d3d_.backBuffer()->width, backBuffer_.height = d3d_.backBuffer()->height;
     backBuffer_.color = d3d_.backBuffer();
     backBuffer_.depth = d3d_.depthBuffer();
     backBuffer_.format = 0x1E;                        // (L: the back buffer's (+8)+0x24, D3DFMT_LIN_X8R8G8B8)
-    clearViewport_ = {0, 0, 640, 480, 0.0f, 1.0f};    // (O: the oracle's clears)
+    clearViewport_ = {0, 0, backBuffer_.width, backBuffer_.height, 0.0f, 1.0f};   // (O: the oracle's clears)
     // 0x001475E0: the vertex / index buffer managers (+0x5B4 / +0x5B8), the group manager (+0x5AC, 0x0015C370) and
     // the renderer's own group +0x5B0 = vf04(1, 0); +0x504 = 0 (no hardware skinning: 0x0014BCC0 is never taken)
     // 0x0015FB20 the texture manager (+0x5BC: minimal), 0x00159CB0 the render state (+0x5C0, with its defaults
@@ -441,10 +442,11 @@ bool NiXBoxRenderer::PackScreenPolygon(ni::NiScreenPolygon& poly) {   // orig: 0
     u8* out = d3d_.Lock2(vb, 0);
     if (!out || vb->data.size() < size_t(count) * stride) return false;   // (UB-avoiding)
     auto put = [](u8* at, f32 x) { std::memcpy(at, &x, 4); };
+    const ni::ScreenAnchor anchor = poly.anchor;      // (port: the widescreen option's placement, ScreenCanvas.h)
     for (u16 i = 0; i < count; ++i) {                 // the depth: near + range * z (x87, kept), times x / y
         const double z = double(depthRange_) * v[i].z + nearPlane_;   // FLD range; FMUL z; FADD near
         u8* at = out + size_t(i) * stride;
-        put(at, F(z * v[i].x));
+        put(at, F(z * ni::ScreenCanvas::X(v[i].x, anchor)));
         put(at + 4, F(z * v[i].y));
         put(at + 8, F(z));
     }
@@ -529,7 +531,15 @@ void NiXBoxRenderer::BuildScreenTexture(ni::NiScreenTexture& t, NiVBChip*& chipO
                 texW = src->pixelDataObj->mips[0].width, texH = src->pixelDataObj->mips[0].height;
     const s32 W = s32(current_->width), H = s32(current_->height);   // (+0x58)+0 / +4
     for (u16 r = 0; r < rects; ++r) {
-        const ni::NiScreenTexture::Rect& q = t.rects[r];
+        ni::NiScreenTexture::Rect q = t.rects[r];
+        if (ni::ScreenCanvas::Wide() && t.anchor != ni::ScreenAnchor::None) {
+            // (port: the widescreen option) the rect on the 640-wide band: offset to the band, and clipped to the
+            // band's right edge as the original's target edge clipped it (the loading tiles' rects are wider than
+            // their texels; past 640 the original showed nothing)
+            const s32 room = std::max(s32(ni::ScreenCanvas::kWidth43) - s32(q.left), 0);
+            if (s32(q.width) > room) q.width = u16(room);   // (a zero width: a quad of no area)
+            q.left = s16(q.left + ni::ScreenCanvas::BandLeft(t.anchor));
+        }
         // the position wrapped into the target (16-bit arithmetic)
         u16 x = u16(q.left), y = u16(q.top);
         if (W > 0) {

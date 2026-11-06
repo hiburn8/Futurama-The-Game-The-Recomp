@@ -9,6 +9,7 @@
 
 #include "engine/ni/NiMath.h"
 #include "engine/ni/NiStream.h"
+#include "engine/ni/ScreenCanvas.h"
 
 #include <array>
 #include <memory>
@@ -857,6 +858,9 @@ public:
     NiPointer<NiTexturingProperty> texturing;        // +0x14
     u16 dirty = 0;                                   // +0x18 (bit 1 the texture, bit 2 the colours; 0xF all)
     std::unique_ptr<NiGeometryRendererData> rendererData;   // +0x1C (the renderer's: its unshared group)
+    // (port: the widescreen option, ScreenCanvas.h) where the rects sit on the original's 640-wide picture; read by
+    // the renderer's BuildScreenTexture only. Nothing at 4:3.
+    ScreenAnchor anchor = ScreenAnchor::None;
 };
 
 // orig: NiScreenPolygon (0x24 bytes, ctor 0x00106DE0 (count, vertices, texture coordinates, colours), vtable
@@ -892,6 +896,9 @@ public:
     u8 drawOnce = 0;                                 // +0x1F (0x00106AC0: with +0x1E, Click's first loop draws it
                                                      //  and removes it from the camera)
     u32 field20 = 0;                                 // +0x20
+    // (port: the widescreen option, ScreenCanvas.h) where the polygon sits on the original's 640-wide picture; read
+    // by the renderer's PackScreenPolygon only. Nothing at 4:3.
+    ScreenAnchor anchor = ScreenAnchor::None;
 };
 
 // ---- extra data -----------------------------------------------------------------------------------------------------

@@ -232,6 +232,7 @@ ExtrasMenu::ExtrasMenu(App& a, ni::NiStream& s) : app(a) {   // orig: 0x0001D020
     if (!cameraNode) return;
     camera = FindAs<ni::NiCamera>(root.Get(), "CAMERA1");    // +0x28 (RTTI 0x002F9120)
     if (!camera) return;
+    ni::ScreenCanvas::Widen(*camera);                  // (port: the widescreen option's Hor+ of the file's frustum)
     camera->renderer = app.services.renderer;          // +0x1A8 = App->vf14()
     // +0x15C = the root (0x0001D377, AddRef: the Click's scene; not owning here, the root holds the camera). Read by
     // the picture splash's Update (0x000EED16: Click of this camera), which draws the grid's scene before the tiles.

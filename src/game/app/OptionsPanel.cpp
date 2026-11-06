@@ -116,6 +116,7 @@ void OptionsPanel::Build(ni::NiCamera* cam, ni::NiNode* scene) {   // orig: 0x00
     const ni::NiPoint2 uvs[4] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
     const ni::NiColorA colors[4] = {{1, 0, 0, 1}, {0, 1, 0, 1}, {0, 0, 1, 1}, {1, 1, 0, 1}};
     frame = new ni::NiScreenPolygon(4, corners, uvs, colors);
+    frame->anchor = ni::ScreenAnchor::Centre;         // (port: the widescreen option: a 4:3 picture, pillarboxed)
     auto* a = new ni::NiAlphaProperty;                // new(0x1C): flags 0xEC, +0x18 = 0; | 1
     a->flags = u16(a->flags | 1);
     auto* tex = new ni::NiTexturingProperty;          // new(0x3C) 0x00109DC0

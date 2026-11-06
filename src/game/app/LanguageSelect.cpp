@@ -47,6 +47,7 @@ bool LanguageSelectContext::OnEnter() {               // PS2 0x001355F0
         std::snprintf(name, sizeof name, "menu\\icon_%u.nif", i);   // PS2 0x0046BEF8..
         const ni::NiPointer<ni::NiSourceTexture> tex = LoadSourceTexture(app_.services.readFile, name);
         f.texture = new ni::NiScreenTexture(tex.Get());
+        f.texture->anchor = ni::ScreenAnchor::Centre;   // (port: the widescreen option: on the centred picture)
         const ni::NiPixelData* pix = tex ? tex->pixelDataObj.Get() : nullptr;
         const u16 w = pix && !pix->mips.empty() ? u16(pix->mips[0].width) : 0;
         const u16 h = pix && !pix->mips.empty() ? u16(pix->mips[0].height) : 0;

@@ -70,13 +70,14 @@ public:
     // camera): a 4-vertex polygon (x / 640, 1 - y / 480 ...; uvs default (0, 1) (1, 1) (1, 0) (0, 0)) with a
     // NiTexturingProperty (apply mode 2, filter 1, the base texture), a NiMaterialProperty (all four colours r g b,
     // alpha 1) and, with `alpha`, a NiAlphaProperty (0xED), attached to `camera` (null: the scene camera, S+0x8C +0x30).
+    // `anchor` (port: the widescreen option, engine/ni/ScreenCanvas.h): where the element sits on the 640-wide picture.
     ni::NiPointer<ni::NiScreenPolygon> MakePolygon(ni::NiObject* texture, f32 w, f32 h, f32 x, f32 y,
                                                    const ni::NiColor& rgb, bool alpha, const ni::NiPoint2* uvs,
-                                                   ni::NiCamera* camera);
+                                                   ni::NiCamera* camera, ni::ScreenAnchor anchor);
     // orig: 0x000E5F60 (element, file, w, h, x, y, alpha, &texturing, &material, uvs, camera): Texture(file), then
     // MakePolygon with the colour (1, 1, 1).
     ni::NiPointer<ni::NiScreenPolygon> MakeIcon(const char* file, f32 w, f32 h, f32 x, f32 y, bool alpha,
-                                                const ni::NiPoint2* uvs, ni::NiCamera* camera);
+                                                const ni::NiPoint2* uvs, ni::NiCamera* camera, ni::ScreenAnchor anchor);
     ni::NiCamera* SceneCamera() const;                // S+0x8C +0x30
     LevelData& level;
     u8 enabled = 1;                                   // +0x00

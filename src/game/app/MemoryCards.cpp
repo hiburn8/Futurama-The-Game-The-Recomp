@@ -1299,6 +1299,7 @@ void SavePanel::Load(App& app) {                      // orig: 0x000E2080 (memca
             }
     }
     camera = FindAs<ni::NiCamera>(scene.Get(), "CAMERA1");   // +0x1C (0x00293F00; RTTI 0x002F9120)
+    if (camera) ni::ScreenCanvas::Widen(*camera);     // (port: the widescreen option's Hor+ of the file's frustum)
     if (camera) camera->UpdateDownwardPass(0.0f, true);   // (+0x15C = +0x18) Update(0, 1) (no test in the original)
     sceneNode = FindAs<ni::NiNode>(scene.Get(), "SceneNode");   // +0x20 (0x002A1EE4)
     static constexpr const char* kTexts[3] = {"Text4", "Text5", "Text6"};
@@ -1755,6 +1756,7 @@ bool Dialog::Build(App& app) {                        // orig: 0x000E3B50
     okText = FindAs<ni::NiNode>(scene.Get(), "text_ok");        // +0x84
     camera = FindAs<ni::NiCamera>(sceneNode.Get(), "CAMERA1");  // +0x98
     if (!camera) return false;                        // (the stream released: 0x00108AC0)
+    ni::ScreenCanvas::Widen(*camera);                 // (port: the widescreen option's Hor+ of the file's frustum)
     camera->sceneRoot = sceneNode.Get();              // +0x15C = +0x60 (the text's Click culls it, not +0x54)
     camera->UpdateDownwardPass(0.0f, true);           // Update(0, 1)
     textNode = FindAs<ni::NiNode>(sceneNode.Get(), "text");     // +0x9C

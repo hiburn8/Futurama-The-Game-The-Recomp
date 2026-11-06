@@ -137,12 +137,12 @@ struct HudFlash {
     ni::NiPoint3 centre;                              // +0x40
     ni::NiPointer<ni::NiScreenPolygon> poly[2];       // +0x4C / +0x50
 
-    HudFlash(Hud& hud, const f32 pos[2], const f32 size[2], f32 dur, f32 sp, f32 spinSpeed)
+    HudFlash(Hud& hud, const f32 pos[2], const f32 size[2], f32 dur, f32 sp, f32 spinSpeed, ni::ScreenAnchor anchor)
         : time(dur), duration(dur), split(sp), spin(spinSpeed) {   // orig: 0x000EBF40 (+0 = +4 = duration)
         ni::NiObject* tex = hud.level.FindTexture("respawn.tga");   // 0x000C2A80 (0x002A281C)
         if (!tex) return;
         for (auto& p : poly)                          // e5c00(tex, w, h, x, y, white, alpha, 0, 0, 0, scene camera)
-            p = hud.MakePolygon(tex, size[0], size[1], pos[0], pos[1], {1, 1, 1}, true, nullptr, nullptr);
+            p = hud.MakePolygon(tex, size[0], size[1], pos[0], pos[1], {1, 1, 1}, true, nullptr, nullptr, anchor);
         if (!poly[0] || !poly[1]) return;
         const auto& v = poly[0]->vertices;            // the centre of vertices 1 and 3
         const double z13 = double(v[3].z) + v[1].z;
@@ -646,6 +646,8 @@ struct HudHead : HudElement {
         headCamera = new ni::NiCamera;                // new(0x250) 0x001009D0
         headCamera->renderer = hud.level.renderer;    // App->vf14() (+0x1A8)
         headCamera->port[0] = 0.0f, headCamera->port[1] = t, headCamera->port[2] = 1.0f, headCamera->port[3] = bottom;
+        headCamera->port[1] = ni::ScreenCanvas::X(t, ni::ScreenAnchor::Left);   // (port: the widescreen option: the
+                                                                                 //  head keeps its size at the left)
         headCamera->SetFrustum(frustum);              // 0x00011960
         maskCamera = new ni::NiCamera;                // new(0x250) 0x001009D0, port (0, 1, 1, 0)
         maskCamera->renderer = hud.level.renderer;
@@ -654,7 +656,8 @@ struct HudHead : HudElement {
         static const ni::NiPoint2 kUV[4] = {{0, 0.8359375f}, {0.8359375f, 0.8359375f}, {0.8359375f, 0}, {0, 0}};
         // Level1-6 / Level4-1: HUD\head_bg2.nif (0x002A5384), else HUD\head_bg.nif (0x002A5398)
         const bool alt = crt::StrICmp(level.c_str(), "Level1-6") == 0 || crt::StrICmp(level.c_str(), "Level4-1") == 0;
-        backdrop = hud.MakeIcon(alt ? "HUD\\head_bg2.nif" : "HUD\\head_bg.nif", w, h, x, y, true, kUV, nullptr);
+        backdrop = hud.MakeIcon(alt ? "HUD\\head_bg2.nif" : "HUD\\head_bg.nif", w, h, x, y, true, kUV, nullptr,
+                                ni::ScreenAnchor::Left);
         MakeMasks(level);                             // 0x000E8A20
         if (ni::NiMaterialProperty* m = MaterialOf(backdrop.Get())) m->alpha = 1.0f, ++m->revision;
     }
@@ -668,14 +671,15 @@ struct HudHead : HudElement {
     void MakeMasks(const std::string& level) {
         const double y0e = double(88.0f) * 0.5f + 49.0f;
         const f32 y0 = F(y0e);
-        mask[0] = hud.MakeIcon("HUD\\head_mask.nif", 128.0f, 64.0f, 0.0f, y0, false, nullptr, maskCamera.Get());
+        mask[0] = hud.MakeIcon("HUD\\head_mask.nif", 128.0f, 64.0f, 0.0f, y0, false, nullptr, maskCamera.Get(),
+                               ni::ScreenAnchor::Left);
         const int d5 = level.size() > 5 ? level[5] - '0' : -'0', d7 = level.size() > 7 ? level[7] - '0' : -'0';
         if (d5 == 4) {
             mask[1] = hud.MakeIcon("HUD\\head_mask2.nif", 16.0f, 32.0f, 128.0f, F((double(y0) + 64.0f) - 32.0f), false,
-                                   nullptr, maskCamera.Get());
+                                   nullptr, maskCamera.Get(), ni::ScreenAnchor::Left);
         } else if (d5 == 1 || (d5 == 5 && d7 == 3)) {
             mask[2] = hud.MakeIcon("HUD\\head_mask3.nif", 128.0f, 32.0f, 0.0f, F(double(y0) + 64.0f), false, nullptr,
-                                   maskCamera.Get());
+                                   maskCamera.Get(), ni::ScreenAnchor::Left);
         }
         auto* a = new ni::NiAlphaProperty;            // new(0x1C) (0x00013D80: flags 0xEC, ref 0)
         a->alphaTestRef = 0x40;
@@ -820,7 +824,7 @@ struct HudHealth : HudElement {
     explicit HudHealth(Hud& hud) : HudElement(hud, "health") {   // 0x00297208
         y = F(double(49.0f) + 39.0f);                 // [0x002A53B0] + [0x002A53CC]
         x = F(double(36.0f) + 41.0f);                 // [0x002A53AC] + [0x0029A694]
-        bar = hud.MakeIcon("HUD\\health_bar2.nif", w, h, x, y, true, nullptr, nullptr);
+        bar = hud.MakeIcon("HUD\\health_bar2.nif", w, h, x, y, true, nullptr, nullptr, ni::ScreenAnchor::Left);
         material = MaterialOf(bar.Get());
         if (bar) {
             auto* vc = new ni::NiVertexColorProperty; // (vtable 0x00293AD0: +0x18 = +0x1C = 0)
@@ -937,10 +941,12 @@ struct HudWeapons : HudElement {
             text->style.hAlign = 0;
             text->style.wordWrap = false;
             text->SetScale(1.5f, std::bit_cast<f32>(0x3FD9999Au));
+            text->SetAnchor(ni::ScreenAnchor::Right);   // (port: the widescreen option: with the weapons)
         }
         const f32 u = F(double(88.0f) * 0.0078125f);  // 88 / 128 ([0x002A5738]) for the uvs (0, u) (u, u) (u, 0) (0, 0)
         const ni::NiPoint2 uv[4] = {{0, u}, {u, u}, {u, 0}, {0, 0}};
-        backdrop = hud.MakeIcon("HUD\\w_backdr.nif", w, h, x, y, true, uv, nullptr);   // 0x002A5724
+        backdrop = hud.MakeIcon("HUD\\w_backdr.nif", w, h, x, y, true, uv, nullptr,
+                                ni::ScreenAnchor::Right);   // 0x002A5724
         camera = hud.SceneCamera();                   // S+0x8C ? (S+0x8C)+0x30
         Command("ammo", -1.0f);                       // vf04 0x000ECF50 (0x00297214)
         active = 1;                                   // +0x15 = 1, then vf05(0)
@@ -1019,7 +1025,8 @@ struct HudWeapons : HudElement {
             if (!flash) {
                 const f32 pos[2] = {F(double(rx) + 78.0f), F(double(ry) + 29.0f)};   // 0x0009ED50
                 const f32 size[2] = {128.0f, 128.0f};
-                flash = std::make_unique<HudFlash>(hud, pos, size, 1.0f, 0.75f, std::bit_cast<f32>(0x41490FDBu));
+                flash = std::make_unique<HudFlash>(hud, pos, size, 1.0f, 0.75f, std::bit_cast<f32>(0x41490FDBu),
+                                                   ni::ScreenAnchor::Right);
             }
             coolEffect = 0;
             flash->time = 0;                          // (+0x70)+0 = 0
@@ -1034,7 +1041,8 @@ struct HudWeapons : HudElement {
             SetPolygonAlpha(backdrop.Get(), 1.0f);
         }
         selected = std::make_unique<HudScreenObject>(   // new(0x1C) 0x000E5680("selected", polygon, this)
-            hud, "selected", hud.MakePolygon(tex, wide, 64.0f, px, py, {1, 1, 1}, true, nullptr, nullptr));
+            hud, "selected", hud.MakePolygon(tex, wide, 64.0f, px, py, {1, 1, 1}, true, nullptr, nullptr,
+                                             ni::ScreenAnchor::Right));
         if (camera) {
             if (previous) camera->DetachScreenPolygon(previous->poly.Get());   // 0x00100FC0
             camera->DetachScreenPolygon(selected->poly.Get());
@@ -1137,6 +1145,7 @@ struct HudCharge : HudElement {
             const f32 R = F(L + W);                   // FADD [0x00293AC0]; FST
             const ni::NiPoint3 v[4] = {{F(L), F(B), 0}, {R, F(B), 0}, {R, F(T), 0}, {F(L), F(T), 0}};
             pip[i] = new ni::NiScreenPolygon(4, v, kUV, nullptr);   // new(0x24) 0x00106DE0
+            pip[i]->anchor = ni::ScreenAnchor::Left;  // (port: the widescreen option's placement)
             pip[i]->AttachProperty(off.Get());
             auto* m = new ni::NiMaterialProperty;     // new(0x5C) 0x00114B10
             material[i] = m;
@@ -1223,10 +1232,11 @@ struct HudItems : HudElement {
         }
         if (!flash) {
             const f32 pos[2] = {x, y}, size[2] = {w, h};
-            flash = std::make_unique<HudFlash>(hud, pos, size, 1.0f, 0.75f, kItemsFlashSpin);
+            flash = std::make_unique<HudFlash>(hud, pos, size, 1.0f, 0.75f, kItemsFlashSpin, ni::ScreenAnchor::Right);
         }
         flash->time = 0;                              // (+0x24)+0 = 0
-        icon = hud.MakePolygon(tex, w, h, x, y, {1, 1, 1}, true, nullptr, nullptr);   // 0x000EA9B0
+        icon = hud.MakePolygon(tex, w, h, x, y, {1, 1, 1}, true, nullptr, nullptr,
+                               ni::ScreenAnchor::Right);   // 0x000EA9B0
         SetPolygonAlpha(icon.Get(), 1.0f);
         flash->Detach(camera.Get());                  // 0x000EB950
         if (camera && icon) {
@@ -1272,7 +1282,9 @@ struct HudCounter : HudElement {
     std::unique_ptr<text::TextObject> text;           // +0x24
     HudCounter(Hud& hud, bool nib)
         : HudElement(hud, nib ? "Nibbler_cnt" : "collectable_cnt"),   // 0x002A5598 / 0x002A5300
-          x(nib ? kNibblerX : kCollectX), y(F(nib ? kNibblerY : kCollectY)), nibbler(nib), text(MakeCounterText(hud)) {}
+          x(nib ? kNibblerX : kCollectX), y(F(nib ? kNibblerY : kCollectY)), nibbler(nib), text(MakeCounterText(hud)) {
+        if (text) text->SetAnchor(nib ? ni::ScreenAnchor::Left : ni::ScreenAnchor::Right);   // (port: widescreen)
+    }
     void Draw() override { DrawText(*this, text.get()); }   // orig: vf02 0x000EB3A0 (both)
     // orig: vf05 0x000EB830 / 0x000E8760: hiding empties the text and makes the icon transparent, showing rewrites
     // the text (0x000EB520 / 0x000E8460) and makes it opaque.
@@ -1313,7 +1325,8 @@ struct HudCounter : HudElement {
             if (!tex) return;
         }
         if (!tex) return;
-        icon = hud.MakePolygon(tex, w, h, x, y, {1, 1, 1}, true, nullptr, nullptr);
+        icon = hud.MakePolygon(tex, w, h, x, y, {1, 1, 1}, true, nullptr, nullptr,
+                               nibbler ? ni::ScreenAnchor::Left : ni::ScreenAnchor::Right);
     }
     void Update() override {                          // orig: vf01 0x000EB680 / 0x000E85B0
         if (!IsActive()) return;
@@ -1345,9 +1358,11 @@ constexpr f32 kCwIndicatorTime = 1.0f;                  // DAT_002D7028 (data, n
 // colour property (source 0, lighting 0), an alpha property ((0xEC & 0xFEED) | 0xED) and a texturing property (apply
 // mode 2, the base map's filter 1 and clamp 0 (0x000506A0), the HUD's texture of the file), in that order.
 ni::NiPointer<ni::NiScreenPolygon> MakeWalkerPolygon(Hud& hud, u16 n, const ni::NiPoint3* v, const char* file,
-                                                     const ni::NiPoint2* uv, const ni::NiColor& rgb) {
+                                                     const ni::NiPoint2* uv, const ni::NiColor& rgb,
+                                                     ni::ScreenAnchor anchor) {
     ni::NiCamera* camera = hud.SceneCamera();
     ni::NiPointer<ni::NiScreenPolygon> p(new ni::NiScreenPolygon(n, v, uv, nullptr));   // new(0x24) 0x00106DE0
+    p->anchor = anchor;                               // (port: the widescreen option's placement, ScreenCanvas.h)
     auto* m = new ni::NiMaterialProperty;             // new(0x5C) 0x00114B10
     m->ambient = m->diffuse = m->specular = m->emissive = rgb;
     m->revision += 6;
@@ -1457,6 +1472,7 @@ struct HudChickenWalker : HudElement {
         // the text: TextObject::Create(0), App->vf14() (0x00098F80), +0x60 = 0, +0x68 = 0, SetScale(2.0, 2.2)
         text.reset(text::TextObject::Create(0, hud.readFile, hud.level.renderer));
         if (text) {
+            text->SetAnchor(ni::ScreenAnchor::Right);   // (port: the widescreen option: with the rocket icon)
             text->style.hAlign = 0;
             text->style.wordWrap = false;
             text->SetScale(2.0f, std::bit_cast<f32>(0x400CCCCDu));
@@ -1487,20 +1503,24 @@ struct HudChickenWalker : HudElement {
         {
             static const ni::NiPoint2 kBackUV[4] = {{0, 1}, {1, 1}, {1, 0}, {0, 0}};
             ni::NiPointer<ni::NiScreenPolygon> back =
-                hud.MakeIcon("HUD\\cw_bar_bg.nif", 64.0f, 256.0f, 60.0f, kCwTop, true, kBackUV, nullptr);   // 0x002A5290
+                hud.MakeIcon("HUD\\cw_bar_bg.nif", 64.0f, 256.0f, 60.0f, kCwTop, true, kBackUV, nullptr,
+                             ni::ScreenAnchor::Left);   // 0x002A5290
             const ni::NiPoint3 v[3] = {{l0, yLow, 0}, {l1, yMid, 0}, {l0, yHigh, 0}};
             const ni::NiPoint2 uv[3] = {{0, uvLow}, {uvU, uvHigh}, {0, 0}};
-            ni::NiPointer<ni::NiScreenPolygon> p = MakeWalkerPolygon(hud, 3, v, "HUD\\cw_bar.nif", uv, {1, 1, 1});
+            ni::NiPointer<ni::NiScreenPolygon> p = MakeWalkerPolygon(hud, 3, v, "HUD\\cw_bar.nif", uv, {1, 1, 1},
+                                                                     ni::ScreenAnchor::Left);
             gauge[0] = std::make_unique<Gauge>(0, p, back);   // new(0x10)
         }
         {
             static const ni::NiPoint2 kBackUV[4] = {{1, 1}, {0, 1}, {0, 0}, {1, 0}};
             const f32 x = F(((640.0 - 60.0f) - 64.0f) + 3.0f);   // [0x002A527C] - [0x002A5220] - [0x0029560C] + [0x0029563C]
             ni::NiPointer<ni::NiScreenPolygon> back =
-                hud.MakeIcon("HUD\\cw_bar_bg.nif", 64.0f, 256.0f, x, kCwTop, true, kBackUV, nullptr);
+                hud.MakeIcon("HUD\\cw_bar_bg.nif", 64.0f, 256.0f, x, kCwTop, true, kBackUV, nullptr,
+                             ni::ScreenAnchor::Right);
             const ni::NiPoint3 v[3] = {{r0, yMid, 0}, {r1, yLow, 0}, {r1, yHigh, 0}};
             const ni::NiPoint2 uv[3] = {{uvU, uvHigh}, {0, uvLow}, {0, 0}};
-            ni::NiPointer<ni::NiScreenPolygon> p = MakeWalkerPolygon(hud, 3, v, "HUD\\cw_bar.nif", uv, {1, 1, 1});
+            ni::NiPointer<ni::NiScreenPolygon> p = MakeWalkerPolygon(hud, 3, v, "HUD\\cw_bar.nif", uv, {1, 1, 1},
+                                                                     ni::ScreenAnchor::Right);
             gauge[1] = std::make_unique<Gauge>(1, p, back);
         }
     }
@@ -1515,16 +1535,20 @@ struct HudChickenWalker : HudElement {
         const ni::NiColor red{1.0f, 0.0f, 0.0f};
         const ni::NiPoint3 v0[4] = {{a, c, 0}, {a, d, 0}, {b, d, 0}, {b, c, 0}};
         const ni::NiPoint2 uv0[4] = {{1, 0}, {1, 1}, {0, 1}, {0, 0}};
-        indicator[0] = std::make_unique<Indicator>(MakeWalkerPolygon(hud, 4, v0, "HUD\\cw_cursor.nif", uv0, red));
+        indicator[0] = std::make_unique<Indicator>(MakeWalkerPolygon(hud, 4, v0, "HUD\\cw_cursor.nif", uv0, red,
+                                                                     ni::ScreenAnchor::Centre));
         const ni::NiPoint3 v1[4] = {{a, e, 0}, {a, 0, 0}, {b, 0, 0}, {b, e, 0}};
         const ni::NiPoint2 uv1[4] = {{1, 1}, {1, 0}, {0, 0}, {0, 1}};
-        indicator[1] = std::make_unique<Indicator>(MakeWalkerPolygon(hud, 4, v1, "HUD\\cw_cursor.nif", uv1, red));
+        indicator[1] = std::make_unique<Indicator>(MakeWalkerPolygon(hud, 4, v1, "HUD\\cw_cursor.nif", uv1, red,
+                                                                     ni::ScreenAnchor::Centre));
         const ni::NiPoint3 v2[4] = {{h, f, 0}, {h, g, 0}, {i, g, 0}, {i, f, 0}};
         const ni::NiPoint2 uv2[4] = {{1, 0}, {0, 0}, {0, 1}, {1, 1}};
-        indicator[2] = std::make_unique<Indicator>(MakeWalkerPolygon(hud, 4, v2, "HUD\\cw_cursor.nif", uv2, red));
+        indicator[2] = std::make_unique<Indicator>(MakeWalkerPolygon(hud, 4, v2, "HUD\\cw_cursor.nif", uv2, red,
+                                                                     ni::ScreenAnchor::Left));
         const ni::NiPoint3 v3[4] = {{j, f, 0}, {j, g, 0}, {k, g, 0}, {k, f, 0}};
         const ni::NiPoint2 uv3[4] = {{1, 1}, {0, 1}, {0, 0}, {1, 0}};
-        indicator[3] = std::make_unique<Indicator>(MakeWalkerPolygon(hud, 4, v3, "HUD\\cw_cursor.nif", uv3, red));
+        indicator[3] = std::make_unique<Indicator>(MakeWalkerPolygon(hud, 4, v3, "HUD\\cw_cursor.nif", uv3, red,
+                                                                     ni::ScreenAnchor::Right));
     }
     // orig: 0x000E6A10: the text emptied, then "%d" (0x00296D4C) of +0x40 at ([0x002A5230] 0.84, [0x002A5234] 0.8).
     void UpdateText() {
@@ -1545,7 +1569,8 @@ struct HudChickenWalker : HudElement {
             if (ind) ind->Tick();
         if (!w) return;
         if (!rocketIcon)
-            rocketIcon = hud.MakeIcon("HUD\\rocket.nif", iconW, iconH, iconX, iconY, true, nullptr, nullptr);   // 0x002A5238
+            rocketIcon = hud.MakeIcon("HUD\\rocket.nif", iconW, iconH, iconX, iconY, true, nullptr, nullptr,
+                                      ni::ScreenAnchor::Right);   // 0x002A5238
         const s32 n = static_cast<s32>(w->rockets);
         if (n == rockets) return;
         rockets = n;
@@ -1619,7 +1644,8 @@ struct HudLives : HudElement {
     std::unique_ptr<text::TextObject> text;           // +0x28
     void Draw() override { DrawText(*this, text.get()); }   // orig: vf02 0x000EADB0
     explicit HudLives(Hud& hud) : HudElement(hud, "lives"), text(MakeCounterText(hud)) {   // 0x002A5560
-        icon = hud.MakeIcon("HUD\\reanim.nif", w, h, x, y, true, nullptr, nullptr);
+        if (text) text->SetAnchor(ni::ScreenAnchor::Left);   // (port: the widescreen option: with the icon)
+        icon = hud.MakeIcon("HUD\\reanim.nif", w, h, x, y, true, nullptr, nullptr, ni::ScreenAnchor::Left);
         if (ni::NiMaterialProperty* m = MaterialOf(icon.Get())) m->alpha = 1.0f, ++m->revision;
     }
     void Update() override {                          // orig: vf01 0x000EB070
@@ -1628,7 +1654,8 @@ struct HudLives : HudElement {
         if (hud.level.lives != shown) {               // 0x000C12B0 (DAT_002D687C)
             if (!flash) {
                 const f32 pos[2] = {kLivesFlashX, kLivesFlashY}, size[2] = {0.2f, 0.2f};
-                flash = std::make_unique<HudFlash>(hud, pos, size, 1.0f, 0.75f, kLivesFlashSpin);
+                flash = std::make_unique<HudFlash>(hud, pos, size, 1.0f, 0.75f, kLivesFlashSpin,
+                                                   ni::ScreenAnchor::Left);
                 flash->Attach(hud.SceneCamera());     // 0x000EC130 (S+0x8C +0x30)
             }
             flash->time = 0;
@@ -1689,15 +1716,19 @@ struct HudTimerElement : HudElement {
         }
         // 0x000ECC96..: the polygons of 0x000E5F60 (all with an alpha property; the scene camera)
         ni::NiPointer<ni::NiScreenPolygon> back =
-            hud.MakeIcon("HUD\\swamp_bar.nif", 256.0f, 32.0f, 192.0f, 400.0f, true, nullptr, nullptr);   // 0x002A56E4
-        hud.MakeIcon("HUD\\swamp_cl.nif", 32.0f, 32.0f, 156.0f, 400.0f, true, nullptr, nullptr);       // 0x002A56D0
-        hud.MakeIcon("HUD\\swamp_fl.nif", 32.0f, 64.0f, 452.0f, 384.0f, true, nullptr, nullptr);      // 0x002A56BC
+            hud.MakeIcon("HUD\\swamp_bar.nif", 256.0f, 32.0f, 192.0f, 400.0f, true, nullptr, nullptr,
+                         ni::ScreenAnchor::Centre);   // 0x002A56E4
+        hud.MakeIcon("HUD\\swamp_cl.nif", 32.0f, 32.0f, 156.0f, 400.0f, true, nullptr, nullptr,
+                     ni::ScreenAnchor::Centre);       // 0x002A56D0
+        hud.MakeIcon("HUD\\swamp_fl.nif", 32.0f, 64.0f, 452.0f, 384.0f, true, nullptr, nullptr,
+                     ni::ScreenAnchor::Centre);       // 0x002A56BC
         if (ni::NiMaterialProperty* m = MaterialOf(back.Get())) {   // emissive (0, 0.3, 0.4), alpha 1
             m->emissive = {0.0f, std::bit_cast<f32>(0x3E99999Au), std::bit_cast<f32>(0x3ECCCCCDu)};
             m->revision += 2;
             m->alpha = 1.0f;
         }
-        bar = hud.MakeIcon("HUD\\swamp_bar.nif", 256.0f, 32.0f, 192.0f, 400.0f, true, nullptr, nullptr);
+        bar = hud.MakeIcon("HUD\\swamp_bar.nif", 256.0f, 32.0f, 192.0f, 400.0f, true, nullptr, nullptr,
+                           ni::ScreenAnchor::Centre);
         if (bar && bar->vertices.size() >= 2) barWidth = F(double(bar->vertices[1].x) - bar->vertices[0].x);
         if (ni::NiMaterialProperty* m = MaterialOf(bar.Get())) {   // emissive (0, 0.75, 1), alpha 1
             m->emissive = {0.0f, 0.75f, 1.0f};
@@ -1910,7 +1941,8 @@ ni::NiObject* Hud::Texture(const char* file) {        // orig: 0x000E59E0
 
 ni::NiPointer<ni::NiScreenPolygon> Hud::MakePolygon(ni::NiObject* texture, f32 w, f32 h, f32 x, f32 y,
                                                     const ni::NiColor& rgb, bool alpha, const ni::NiPoint2* uvs,
-                                                    ni::NiCamera* camera) {   // orig: 0x000E5C00
+                                                    ni::NiCamera* camera,
+                                                    ni::ScreenAnchor anchor) {   // orig: 0x000E5C00
     if (!camera) camera = SceneCamera();
     if (!camera) return {};
     static const ni::NiPoint2 kUV[4] = {{0, 1}, {1, 1}, {1, 0}, {0, 0}};
@@ -1920,6 +1952,7 @@ ni::NiPointer<ni::NiScreenPolygon> Hud::MakePolygon(ni::NiObject* texture, f32 w
     const double T = 1.0 - double(y) * kInv480;       // FSUBR [1.0] (kept)
     const ni::NiPoint3 v[4] = {{F(L), F(T - H), 0}, {F(L + W), F(T - H), 0}, {F(L + W), F(T), 0}, {F(L), F(T), 0}};
     ni::NiPointer<ni::NiScreenPolygon> p(new ni::NiScreenPolygon(4, v, uvs ? uvs : kUV, nullptr));
+    p->anchor = anchor;                               // (port: the widescreen option's placement, ScreenCanvas.h)
     auto* t = new ni::NiTexturingProperty;            // apply mode 2, the base map's filter 1 (0x0001D6B0)
     t->applyMode = 2;
     if (!t->HasMap(0)) t->SetBaseTexture(nullptr);    // (0x0001D6B0 makes the base map: Map::Map 0x0001D570)
@@ -1941,8 +1974,9 @@ ni::NiPointer<ni::NiScreenPolygon> Hud::MakePolygon(ni::NiObject* texture, f32 w
 }
 
 ni::NiPointer<ni::NiScreenPolygon> Hud::MakeIcon(const char* file, f32 w, f32 h, f32 x, f32 y, bool alpha,
-                                                 const ni::NiPoint2* uvs, ni::NiCamera* camera) {   // 0x000E5F60
-    return MakePolygon(Texture(file), w, h, x, y, {1, 1, 1}, alpha, uvs, camera);
+                                                 const ni::NiPoint2* uvs, ni::NiCamera* camera,
+                                                 ni::ScreenAnchor anchor) {   // 0x000E5F60
+    return MakePolygon(Texture(file), w, h, x, y, {1, 1, 1}, alpha, uvs, camera, anchor);
 }
 
 void PrepareLitModel(ni::NiAVObject* object) { PrepareHeadModel(object); }   // orig: 0x000966A0

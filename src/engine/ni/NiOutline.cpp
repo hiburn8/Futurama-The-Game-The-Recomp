@@ -570,6 +570,7 @@ void NiOutline::DrawSilhouette(NiCamera& cam) {       // orig: 0x00153F20
                 X = ((double(cdx) - pdx) * inv) * kx * kAspect;
                 Y = ((double(cdy) - pdy) * inv) * ky;
             }
+            if (ScreenCanvas::Wide()) X /= ScreenCanvas::Expansion();   // (port: the line's width on a wider canvas)
             ChainRecord& r = rec[i];
             r.a[0] = F(X + r.p[0]), r.a[1] = F(Y + r.p[1]), r.a[2] = r.p[2];
             r.b[0] = F(double(r.p[0]) - X), r.b[1] = F(double(r.p[1]) - Y), r.b[2] = r.p[2];

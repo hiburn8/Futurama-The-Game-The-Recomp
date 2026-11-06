@@ -41,6 +41,7 @@ void PauseMenu::Build() {                             // orig: 0x000A8640
                             std::bit_cast<f32>(0x3F028F5Cu), std::bit_cast<f32>(0xBF028F5Cu),
                             std::bit_cast<f32>(0x3DCCCCCDu), 1000.0f};
     camera->SetFrustum(frustum);
+    ni::ScreenCanvas::Widen(*camera);                 // (port: the widescreen option's Hor+; nothing at 4:3)
     camera->port[0] = 0.0f, camera->port[1] = 1.0f, camera->port[2] = 1.0f, camera->port[3] = 0.0f;
     camera->renderer = app.services.renderer;
     // the root +0x44 (new(0xE0) NiNode) with a z-buffer property at its head: new(0x1C) (flags 3, function 3), flags
@@ -101,6 +102,10 @@ void PauseMenu::Build() {                             // orig: 0x000A8640
     options->node = FindAs<ni::NiNode>(scene.Get(), "options1");  // +0xC
     options->Build(camera.Get(), scene.Get());        // vf28 0x000279C0(scene, camera) (its Reset 0x000A7F50: two draws)
     fade = FindAs<ni::NiTriShape>(scene.Get(), "fade1Shape");   // +0x40
+    // (port: the widescreen option: the dimmer is a quad sized for the 4:3 frustum; scaled up by the canvas's
+    // expansion so it still covers the wider view. Nothing at 4:3.)
+    if (fade && ni::ScreenCanvas::Wide())
+        fade->local.scale = f32(double(fade->local.scale) * ni::ScreenCanvas::Expansion());
     if (auto* l = FindAs<ni::NiNode>(scene.Get(), "pointLight4")) root->AttachChild(l, true);
     if (auto* l = FindAs<ni::NiNode>(scene.Get(), "pointLight3")) root->AttachChild(l, true);
     camNull = FindAs<ni::NiNode>(scene.Get(), "camnull");   // +0x4C

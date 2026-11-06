@@ -53,9 +53,16 @@ public:
     void UpdateCamera();                              // orig: 0x00098D70 (unless +0xC, when +0x79: the node's and
                                                       //  the camera's Update)
     void Click();                                     // orig: 0x00098DB0 (when +0x120: the camera's Click)
+    // (port: the widescreen option, engine/ni/ScreenCanvas.h) where this text's strings sit on the original's
+    // 640-wide picture: the text camera's frustum is widened by the canvas's expansion and shifted so that a
+    // string's x (a fraction of the 640-wide picture) lands at its element's edge or in the centre; the glyph
+    // sizes, advances and AddString's range are untouched. Create makes every text Centre; the HUD's counters set
+    // Left / Right. Nothing at 4:3; nothing in the scene mode (the scene's camera draws the strings).
+    void SetAnchor(ni::ScreenAnchor anchor);
 
     ni::NiPointer<ni::NiCamera> camera;               // +0x00
     bool sceneMode = false;                           // +0x0C (0x00099BE0)
+    ni::ScreenAnchor anchor = ni::ScreenAnchor::Centre;   // (port: SetAnchor)
     TextStyle style;                                  // +0x04 .. +0x68
     ni::NiPointer<ni::NiTexturingProperty> texturing; // +0x18
     ni::NiPointer<ni::NiNode> node;                   // +0x1C

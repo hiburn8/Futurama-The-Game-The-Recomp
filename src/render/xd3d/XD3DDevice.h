@@ -75,6 +75,9 @@ public:
 
     Resource* backBuffer() const { return frameBuffers_[0]; }
     Resource* depthBuffer() const { return frameBuffers_[1]; }
+    // (port: the widescreen option, engine/ni/ScreenCanvas.h) the frame buffers' size: 640 x 480 (the constructor's)
+    // or the canvas the game draws into. Before any backend initialisation or drawing.
+    void SetCanvasSize(u32 width, u32 height);
 
     // ---- the call surface (renderer_d3d_map.md 5) ----
     // InitializeD3dState 0x00239660 (run by Direct3D_CreateDevice): the identity transforms, the default render
