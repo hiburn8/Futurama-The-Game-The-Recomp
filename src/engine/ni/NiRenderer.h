@@ -68,6 +68,7 @@ public:
     virtual void PurgeTexture(const NiTexture& texture) { (void)texture; }
     // orig: renderer +0x60, the D3D device (the movie player's 0x000EDED0 takes it; null: none).
     virtual render::xd3d::XD3DDevice* D3DDevice() { return nullptr; }
+    virtual bool SetSceneWorld(bool) { return false; }
     // orig: the movie player's 0x000EE59A..0x000EE5D9: the source texture's renderer data (+0x20) takes `d3d` as its
     // D3D texture (+0x3C: the old one released, `d3d` AddRef'd).
     virtual void SetSourceTextureD3D(NiSourceTexture& texture, render::xd3d::Resource* d3d) {

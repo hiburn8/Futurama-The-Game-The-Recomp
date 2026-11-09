@@ -57,6 +57,7 @@ private:
     std::map<const ni::NiObject*, xd3d::Resource*> textures_;
 };
 
+class NiXBoxHudTexturingProperty : public ni::NiTexturingProperty {};
 class NiXBoxTexturePipeline;
 
 // orig: NiRendererSpecificProperty (new(0x1C) 0x001176A0, +0x18 = the holder: new(0x10) 0x00147C30, vtable 0x002AA854,
@@ -83,6 +84,7 @@ public:
         xd3d::D3DMATRIX matrix{};                     // +0x4C
         u32 textureFactor = 0xFFFFFFFFu;              // +0x8C
         bool lit = true;                              // +0x90
+        bool hudOverlay = false;                      // port: this use, not the shared engine texture
         u32 type = 9;                                 // +0x94
         bool bumpOn = false;                          // +0x98
         u32 bump[6] = {0, 0, 0, 0, 0x3F800000u, 0};   // +0x9C..+0xB0 (BUMPENVMAT00, 01, 11, 10, LSCALE, LOFFSET)

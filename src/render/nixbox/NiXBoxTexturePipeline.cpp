@@ -498,6 +498,7 @@ NiXBoxTexturePipeline::Stage* NiXBoxTexturePipeline::PoolStage(ni::NiObject* tex
     ++poolNext_;
     if (sets == 0) return nullptr;
     st.texture = texture;
+    st.hudOverlay = false;
     SetClamp(st, clamp);
     SetFilter(st, filter);
     st.type = type;
@@ -696,6 +697,7 @@ u32 NiXBoxTexturePipeline::BuildDefaultPasses(const ni::NiPropertyState& props,
     const bool lit = tex->applyMode != 0;
     Stage* s0 = PoolStage(baseMap ? baseMap->textureObj.Get() : nullptr, baseMap ? baseMap->clampMode : 3,
                           baseMap ? baseMap->filterMode : 0, 2, baseMap ? baseMap->textureIndex : 0, sets, baseMap);
+    if (s0) s0->hudOverlay = dynamic_cast<const NiXBoxHudTexturingProperty*>(tex) != nullptr;
     if (effectStages_ == 0 && !tex->hasMultiTexture) {   // the simple case
         if (!AddToPass(s0, 1, 1)) {
             s0 = &empty_;
@@ -866,12 +868,14 @@ u32 NiXBoxTexturePipeline::ApplyPass(Pass& p) {       // orig: 0x00160070
 
 void NiXBoxTexturePipeline::DisableStage(u32 s) {     // orig: 0x00161D60
     state_.SetTexture(s, nullptr);                    // @0x00161D8E
+    d3d_.hudTextures[s] = false;
     state_.SetStage(s, TSS_COLOROP, 1, 0x800);
     state_.SetStage(s, TSS_ALPHAOP, 1, 0x800);
 }
 
 void NiXBoxTexturePipeline::ApplyStage(Stage& st) {   // orig: 0x001620B0
     const u32 s = st.index & 3;
+    d3d_.hudTextures[s] = false;
     if (!st.texture) {
         state_.SetTexture(s, nullptr);                // @0x001621EF
     } else {
@@ -880,6 +884,7 @@ void NiXBoxTexturePipeline::ApplyStage(Stage& st) {   // orig: 0x001620B0
         if (!textures_.Prepare(st.texture.Get(), d3d, set, mips)) d3d = nullptr;
         if (set) {
             state_.SetTexture(s, d3d);                // @0x00162151 (a palette: NOT PORTED, none in level1-1)
+            d3d_.hudTextures[s] = d3d && st.hudOverlay;
         }
         if (d3d) {
             // 0x00162000: the matrix with TTF (always written), TTF, TCI (a call)

@@ -54,6 +54,7 @@ public:
     // orig: NiTexture's dtor 0x00118490: the texture's renderer data (+0x20) deleted, its D3D texture released.
     void PurgeTexture(const ni::NiTexture& texture) override;
     xd3d::XD3DDevice* D3DDevice() override { return &d3d_; }   // (+0x60)
+    bool SetSceneWorld(bool world) override { return d3d_.SetSceneWorld(world); }
     void SetSourceTextureD3D(ni::NiSourceTexture& texture, xd3d::Resource* d3d) override;
     void ClearBuffer(const f32* rect, u32 flags) override;   // orig: 0x00146520
     void SetBackgroundColor(const ni::NiColor& c) override;  // orig: 0x0014B150

@@ -17,6 +17,7 @@
 #include "game/sound/GameSound.h"
 #include "game/text/LanguageDb.h"
 #include "game/text/TextObject.h"
+#include "render/nixbox/NiXBoxTexturePipeline.h"
 
 #include <bit>
 #include <cmath>
@@ -809,8 +810,8 @@ struct HudHead : HudElement {
     void Draw() override {
         if (!active || !face) return;
         if (headCamera->renderer) headCamera->renderer->ClearBuffer(headCamera->port, 4);
-        ni::VisitForCulling(*maskCamera, nullptr);    // (+0x15C: no scene)
-        ni::VisitForCulling(*headCamera, node.Get());
+        ni::VisitForCulling(*maskCamera, nullptr, false);   // (+0x15C: no scene)
+        ni::VisitForCulling(*headCamera, node.Get(), false);
     }
 };
 
@@ -1117,7 +1118,7 @@ struct HudCharge : HudElement {
         Setup();                                      // 0x000E6330
     }
     static ni::NiTexturingProperty* MakeTexturing(ni::NiObject* texture) {
-        auto* t = new ni::NiTexturingProperty;        // new(0x3C) 0x00109DC0; +0x18 = 2
+        auto* t = new render::nixbox::NiXBoxHudTexturingProperty;        // new(0x3C) 0x00109DC0; +0x18 = 2
         t->applyMode = 2;
         if (!t->HasMap(0)) t->SetBaseTexture(nullptr);   // SetBaseFilterMode(1) 0x0001D6B0 (makes the base map)
         t->maps[0].filterMode = 1;
@@ -1375,7 +1376,7 @@ ni::NiPointer<ni::NiScreenPolygon> MakeWalkerPolygon(Hud& hud, u16 n, const ni::
     a->flags = u16((a->flags & 0xFEED) | 0xED);
     p->AttachProperty(a);
     ni::NiObject* tex = hud.Texture(file);            // 0x000E59E0
-    auto* t = new ni::NiTexturingProperty;            // new(0x3C) 0x00109DC0
+    auto* t = new render::nixbox::NiXBoxHudTexturingProperty;            // new(0x3C) 0x00109DC0
     t->applyMode = 2;                                 // +0x18
     if (!t->HasMap(0)) t->SetBaseTexture(nullptr);    // SetBaseFilterMode(1) 0x0001D6B0 (makes the base map)
     t->maps[0].filterMode = 1;
@@ -1953,7 +1954,7 @@ ni::NiPointer<ni::NiScreenPolygon> Hud::MakePolygon(ni::NiObject* texture, f32 w
     const ni::NiPoint3 v[4] = {{F(L), F(T - H), 0}, {F(L + W), F(T - H), 0}, {F(L + W), F(T), 0}, {F(L), F(T), 0}};
     ni::NiPointer<ni::NiScreenPolygon> p(new ni::NiScreenPolygon(4, v, uvs ? uvs : kUV, nullptr));
     p->anchor = anchor;                               // (port: the widescreen option's placement, ScreenCanvas.h)
-    auto* t = new ni::NiTexturingProperty;            // apply mode 2, the base map's filter 1 (0x0001D6B0)
+    auto* t = new render::nixbox::NiXBoxHudTexturingProperty;            // apply mode 2, the base map's filter 1 (0x0001D6B0)
     t->applyMode = 2;
     if (!t->HasMap(0)) t->SetBaseTexture(nullptr);    // (0x0001D6B0 makes the base map: Map::Map 0x0001D570)
     t->maps[0].filterMode = 1;

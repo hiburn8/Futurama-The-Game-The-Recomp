@@ -187,7 +187,10 @@ void XD3DDevice::LightEnable(u32 index, bool enable) {   // orig: 0x00234F00
 }
 
 void XD3DDevice::SetTexture(u32 stage, Resource* texture) {
-    if (stage < kNumStages) textures[stage] = texture;
+    if (stage < kNumStages) {
+        textures[stage] = texture;
+        hudTextures[stage] = false;
+    }
 }
 
 void XD3DDevice::SetStreamSource(u32 stream, Resource* vb, u32 stride) {

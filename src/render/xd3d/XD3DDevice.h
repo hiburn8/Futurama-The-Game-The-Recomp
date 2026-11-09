@@ -56,6 +56,7 @@ public:
     D3DVIEWPORT8 viewport;
     bool viewportSet = false;
     Resource* textures[kNumStages] = {};
+    bool hudTextures[kNumStages] = {};                // per use: HUD and world draws may share a texture
     Resource* palettes[kNumStages] = {};
     Resource* streamSource = nullptr;                 // stream 0 (the renderer uses no other)
     u32 streamStride = 0;
@@ -78,6 +79,7 @@ public:
     // (port: the widescreen option, engine/ni/ScreenCanvas.h) the frame buffers' size: 640 x 480 (the constructor's)
     // or the canvas the game draws into. Before any backend initialisation or drawing.
     void SetCanvasSize(u32 width, u32 height);
+    virtual bool SetSceneWorld(bool) { return false; }
 
     // ---- the call surface (renderer_d3d_map.md 5) ----
     // InitializeD3dState 0x00239660 (run by Direct3D_CreateDevice): the identity transforms, the default render

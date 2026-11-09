@@ -49,7 +49,8 @@ struct VSOut {
     float4 d0 : COLOR0; float4 d1 : COLOR1;
     nointerpolation float4 fd0 : COLOR2; nointerpolation float4 fd1 : COLOR3;
     float4 fog : TEXCOORD4;
-    float4 t0 : TEXCOORD0; float4 t1 : TEXCOORD1; float4 t2 : TEXCOORD2; float4 t3 : TEXCOORD3;
+    centroid float4 t0 : TEXCOORD0; centroid float4 t1 : TEXCOORD1; centroid float4 t2 : TEXCOORD2;
+    centroid float4 t3 : TEXCOORD3;
 };
 
 float4 Source(int s, float4 vertexColor, float4 material) {
@@ -93,7 +94,7 @@ VSOut VSMain(VSIn i) {
     VSOut o;
     float3 pv = 0, nv = float3(0, 0, 1);
     // The screen-space offset: D3DDevice_SetScreenSpaceOffset 0x00235590 stores 0.53125 ([0x00242250]) + (x, y) and the
-    // viewport constants 0x00238000 subtract 0 (0.5 only in a multisample mode; the game's surfaces are not
+    // viewport constants 0x00238000 subtract 0 (0.5 only in a multisample mode; the original game's surfaces are not
     // multisampled, 0x00146210: 0x11): the NV2A samples at pixel centres (+0.5, as D3D11), so the geometry moves by
     // 0.53125 + (x, y) pixels: D3D8's integer pixel centres plus 1 / 32 that keeps edges on integer coordinates off the
     // sample points (without it thin quads such as NiOutline's edge strips break up into dots). Under the render
