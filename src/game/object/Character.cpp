@@ -579,7 +579,7 @@ bool Character::Init() {                              // orig: 0x00038070
     }
     if (def->IsType(2)) {                             // orig: 0x000382D2: the projected shadow
         shadowEffect = new ni::NiTextureEffect;       // +0x5A0 = new(0x1A0) 0x00119F00 (an effect id)
-        shadowTexture = ni::CreateRenderedTexture(128, 128, level.renderer);   // +0x5AC / +0x5A8 released first
+        shadowTexture = ni::CreateRenderedTexture(kShadowTextureSize, kShadowTextureSize, level.renderer);   // +0x5AC / +0x5A8 released first
         shadowEffect->sourceTextureObj = shadowTexture.Get();   // 0x00013D00 (+0x15C)
         shadowEffect->textureFiltering = 1;           // +0x160
         shadowEffect->coordGenType = 0;               // +0x16C

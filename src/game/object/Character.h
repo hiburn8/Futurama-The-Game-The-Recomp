@@ -31,6 +31,9 @@ struct RayHit;
 
 namespace fut::game {
 
+// Larger projected-shadow targets avoid blockiness at modern output sizes without changing the shadow camera or projection.
+inline constexpr unsigned kShadowTextureSize = 256;
+
 class CharacterDef;
 class CannonCtrl;
 class ChickenWalker;
