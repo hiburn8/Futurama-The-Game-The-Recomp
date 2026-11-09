@@ -24,6 +24,7 @@
 #include <vector>
 
 struct HWND__;
+struct ID3D11Device;
 
 namespace fut::render::xd3d {
 
@@ -41,6 +42,11 @@ public:
     void Resize(u32 width, u32 height);
     enum class Filter { Linear, Nearest };
     void SetFilter(Filter filter);
+    // MaxAnisotropy for trilinear world textures with authored mip chains; 1 (off) is the default.
+    bool SetAnisotropy(u32 value);
+    // Scene-only MSAA, 1 (off) or 2/4/8 samples. Colour resolves before presentation or a texture read.
+    bool SetAntiAliasing(u32 samples, std::string& error);
+    bool SetSceneWorld(bool world) override;
     // The render scale (docs/analysis/render_scale_plan.md): every render target (the back buffer, its depth, the
     // rendered textures) is round(logical x factor) pixels behind the logical size the game sees; the game's D3D8
     // stream is unchanged. factor <= 0 = auto: the canvas is the window's rectangle of its own shape (so Swap draws
@@ -49,6 +55,7 @@ public:
     void SetRenderScale(double factor);
     double RenderScale() const;
     u32 draws() const { return draws_; }
+    ID3D11Device* NativeDevice() const;
 
     void Clear(u32 count, const D3DRECT* rects, u32 flags, u32 color, f32 z, u32 stencil) override;
     void Swap(u32 flags) override;

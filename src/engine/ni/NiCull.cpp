@@ -185,7 +185,7 @@ void NiCullPass::Cull(NiAVObject* o) {                // orig: 0x00101AC0
     active = savedActive;
 }
 
-void VisitForCulling(NiCamera& camera, NiAVObject* scene) {   // orig: NiCamera::Click 0x00100CE0
+void VisitForCulling(NiCamera& camera, NiAVObject* scene, bool world) {   // orig: NiCamera::Click 0x00100CE0
     NiRenderer* r = camera.renderer;
     if (!r) {                                         // (the fake renderer: no display, the counters only)
         if (!scene || !scene->IsVisualObject()) return;   // scene->vf70 (NiNode: flags & 0x0100)
@@ -193,6 +193,7 @@ void VisitForCulling(NiCamera& camera, NiAVObject* scene) {   // orig: NiCamera:
         pass.Cull(scene);
         return;
     }
+    const bool previousWorld = r->SetSceneWorld(world);
     BeginOutlineClick();                              // 0x0013C7E0 (the outline polygons' pool from its start)
     // (DAT_002E8DDC = 0xFE770FA6 for the Click, restored after: L, render statistics; not ported)
     r->SetCameraData(camera.world.translate, camera.worldDir, camera.worldUp, camera.worldRight, camera.frustum,
@@ -217,6 +218,7 @@ void VisitForCulling(NiCamera& camera, NiAVObject* scene) {   // orig: NiCamera:
         }
         // 0x00100E6A: the objects of +0x17C (vf84 with the camera, then removed): none is ever added (L)
     }
+    r->SetSceneWorld(false);
     // 0x00100F0D: the screen textures (+0x194, count +0x19C, the size re-read every iteration): 0x0010B000 ->
     // renderer vfDC
     for (size_t i = 0; i < camera.screenTextureList.size(); ++i)
@@ -225,6 +227,7 @@ void VisitForCulling(NiCamera& camera, NiAVObject* scene) {   // orig: NiCamera:
     for (size_t i = 0; i < camera.screenPolygonList.size(); ++i)
         if (NiScreenPolygon* p = camera.screenPolygonList[i].Get()) r->DrawScreenPolygon(*p);
     r->EndScene();                                    // vfB8
+    r->SetSceneWorld(previousWorld);
 }
 
 void NiTriShape::OnVisible(NiCullPass& pass) {        // orig: 0x00116760 (the display)

@@ -41,6 +41,8 @@ It starts full screen at your screen's resolution, 4:3 with black bars; Alt+Ente
 | `--size 1920x1080` | the window size |
 | `--render-scale 1` | the original 640x480 picture scaled up (`2` = 1280x960, default `auto` = your screen) |
 | `--filter nearest` | crisp unfiltered pixels instead of smooth scaling |
+| `--aa 4` | scene anti-aliasing with 1, 2, 4 or 8 samples, plus alpha-to-coverage on alpha-tested world geometry (default `1` = off) |
+| `--anisotropic 16` | anisotropic filtering for trilinearly sampled world textures with authored mip chains (`off`, `2`, `4`, `8` or `16`; default `off`) |
 | `--aspect 16:9` | widescreen, up to super-ultrawide (`16:10`, `21:9`, `32:9`, any `w:h`, or `auto` = your screen's shape): more world at the sides, the HUD at the edges, movies and splashes centred (default `4:3`; see below) |
 | `--saves <folder>` | where saves go (default `%APPDATA%\FuturamaRecomp\saves`, or `~/.local/share/FuturamaRecomp/saves` on Linux) |
 

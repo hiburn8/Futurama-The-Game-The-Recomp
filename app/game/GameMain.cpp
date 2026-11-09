@@ -4,7 +4,8 @@
 // port 0 (or the keyboard: Window's KeyboardGamepad).
 //
 //   fut_game <iso-or-folder> [--size WxH] [--windowed | --fullscreen] [--render-scale auto|<factor>]
-//            [--filter linear|nearest] [--aspect auto|4:3|16:9|16:10|21:9|<w>:<h>] [--saves <dir>]
+//            [--filter linear|nearest] [--aa 1|2|4|8] [--anisotropic off|2|4|8|16]
+//            [--aspect auto|4:3|16:9|16:10|21:9|<w>:<h>] [--saves <dir>]
 //   fut_game                       (no arguments, e.g. double-clicked: platform/sdl/Launcher.h finds the disc)
 //
 // The picture: the game renders the Xbox's 640 x 480 frame, which the device draws into the largest 4:3 rectangle of
@@ -102,8 +103,9 @@ int main(int argc, char** argv) {
     std::string source = argc >= 2 ? argv[1] : platform::FindDisc(CheckDisc);   // the disc image / folder
     if (argc < 2 && source.empty()) {                 // (no argument and the dialog cancelled)
         std::fprintf(stderr, "usage: fut_game <iso-or-folder> [--size WxH] [--windowed | --fullscreen]"
-                             " [--render-scale auto|<factor>] [--filter linear|nearest]"
-                             " [--aspect auto|4:3|16:9|16:10|21:9|<w>:<h>] [--saves <dir>]");
+                             " [--render-scale auto|<factor>] [--filter linear|nearest] [--aa 1|2|4|8]"
+                             " [--anisotropic off|2|4|8|16] [--aspect auto|4:3|16:9|16:10|21:9|<w>:<h>]"
+                             " [--saves <dir>]");
         std::fputs("\n", stderr);
         return 2;
     }
@@ -112,6 +114,7 @@ int main(int argc, char** argv) {
     render::xd3d::D3D11Device::Filter filter = render::xd3d::D3D11Device::Filter::Linear;   // (--filter)
     double renderScale = 0;                           // (--render-scale: 0 = auto)
     double aspect = 4.0 / 3.0;                        // (--aspect: the canvas's shape; 0 = auto, the window's)
+    u32 aaSamples = 1, anisotropy = 1;                // (--aa / --anisotropic: the original sampling)
     std::filesystem::path saveDir = SaveFolder();     // (--saves <dir>)
     for (int i = 2; i < argc; ++i) {
         const std::string a = argv[i];
@@ -128,6 +131,15 @@ int main(int argc, char** argv) {
             if (f == "nearest") filter = render::xd3d::D3D11Device::Filter::Nearest;
             else if (f == "linear") filter = render::xd3d::D3D11Device::Filter::Linear;
             else return fail("--filter takes linear or nearest", 2);
+        } else if (a == "--aa" && i + 1 < argc) {
+            const std::string s = argv[++i];
+            if (s == "1" || s == "2" || s == "4" || s == "8") aaSamples = std::stoul(s);
+            else return fail("--aa takes 1, 2, 4 or 8", 2);
+        } else if (a == "--anisotropic" && i + 1 < argc) {
+            const std::string s = argv[++i];
+            if (s == "off") anisotropy = 1;
+            else if (s == "2" || s == "4" || s == "8" || s == "16") anisotropy = std::stoul(s);
+            else return fail("--anisotropic takes off, 2, 4, 8 or 16", 2);
         } else if (a == "--aspect" && i + 1 < argc) {
             const std::string s = argv[++i];
             unsigned w = 0, h = 0;
@@ -165,6 +177,8 @@ int main(int argc, char** argv) {
     }
     device.SetRenderScale(renderScale);               // (before Init: the targets are made at the scale)
     if (!device.Init(window.NativeHandle(), window.Width(), window.Height(), error)) return fail(error, 1);
+    if (!device.SetAntiAliasing(aaSamples, error)) return fail(error, 1);
+    if (!device.SetAnisotropy(anisotropy)) return fail("invalid anisotropic filtering value", 1);
     device.SetFilter(filter);
     render::nixbox::NiXBoxRenderer renderer(device);  // the factory 0x0014C200 (App+0x104)
     platform::Gamepads gamepads;

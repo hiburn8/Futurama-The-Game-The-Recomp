@@ -145,6 +145,16 @@ D3D11_TEXTURE_ADDRESS_MODE Address(u32 v) {
     }
 }
 
+bool ValidAnisotropy(u32 value) {
+    return value == 1 || value == 2 || value == 4 || value == 8 || value == 16;
+}
+
+u32 StageAnisotropy(const Resource& texture, const u32* state, u32 anisotropy, bool world, bool hud, bool rhw) {
+    if (!world || hud || rhw || texture.rendered || texture.format == 0x24 || texture.levels < 2) return 1;
+    if (state[TSS_MAGFILTER] < 2 || state[TSS_MINFILTER] < 2 || state[TSS_MIPFILTER] < 2) return 1;
+    return anisotropy;
+}
+
 // The texture's Xbox texels (the texture manager's CopyDataToSurface layout: the levels one after the other, the
 // swizzled formats in the Swizzler's order, x bits then y bits from the lowest) as D3D11 levels: the 16 / 32-bit
 // formats deswizzled and expanded to RGBA8 (the channel's v * 255 / max, rounded: L, NV2A expands by replicating
@@ -220,6 +230,10 @@ struct D3D11Device::Impl {
     ComPtr<ID3D11DeviceContext> ctx;
     ComPtr<ID3D11DeviceContext1> ctx1;
     ComPtr<IDXGISwapChain> swapChain;
+    Resource* sceneColor = nullptr;
+    Resource* sceneDepth = nullptr;
+    u32 anisotropy = 1, aaSamples = 1;
+    bool sceneWorld = false;
     ComPtr<ID3D11VertexShader> vs, clearVs, blitVs;
     ComPtr<ID3D11PixelShader> ps, clearPs, blitPs;
     ComPtr<ID3D11InputLayout> layout;
@@ -241,17 +255,19 @@ struct D3D11Device::Impl {
     bool autoScale = true;
     double fixedScale = 1.0;
     struct Target {                                   // a D3D11 view of a colour / depth resource
-        ComPtr<ID3D11Texture2D> tex;
+        ComPtr<ID3D11Texture2D> tex;                  // single-sample resolve/SRV, or the depth resource
+        ComPtr<ID3D11Texture2D> multisample;          // scene colour while MSAA is active
         ComPtr<ID3D11RenderTargetView> rtv;
         ComPtr<ID3D11DepthStencilView> dsv;
         ComPtr<ID3D11ShaderResourceView> srv;
         u32 width = 0, height = 0;                    // logical (the resource's: viewports, rects, RHW vertices)
         u32 physicalWidth = 0, physicalHeight = 0;    // the texture's
-        bool depth = false;
+        bool depth = false, scene = false;
     };
     std::unordered_map<const Resource*, Target> targets;   // render targets (the back buffer, rendered textures)
     static u32 Physical(u32 logical, double scale) { return std::max(u32(std::lround(logical * scale)), 1u); }
-    bool MakeTarget(const Resource* key, bool depth, Target& t);
+    bool MakeTarget(const Resource* key, bool depth, Target& t, u32 samples = 0);
+    void ResolveTarget(Target& t);
     void ApplyScale(double sx, double sy);            // re-makes every target at the new scale (colour content kept)
     // A textured quad over the viewport of `rtv` (the blit shaders): the presentation and the scale's copies.
     void DrawQuad(ID3D11RenderTargetView* rtv, const D3D11_VIEWPORT& v, ID3D11ShaderResourceView* src,
@@ -280,8 +296,12 @@ struct D3D11Device::Impl {
 D3D11Device::D3D11Device() : impl_(std::make_unique<Impl>()) {}
 D3D11Device::~D3D11Device() = default;
 
+ID3D11Device* D3D11Device::NativeDevice() const { return impl_->device.Get(); }
+
 bool D3D11Device::Init(HWND__* window, u32 width, u32 height, std::string& error) {
     Impl& d = *impl_;
+    d.sceneColor = backBuffer();
+    d.sceneDepth = depthBuffer();
     const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0};
     HRESULT hr;
     if (window) {
@@ -377,24 +397,38 @@ bool D3D11Device::Init(HWND__* window, u32 width, u32 height, std::string& error
     return true;
 }
 
-bool D3D11Device::Impl::MakeTarget(const Resource* key, bool depth, Target& t) {
+bool D3D11Device::Impl::MakeTarget(const Resource* key, bool depth, Target& t, u32 samples) {
     t.depth = depth;
+    t.scene = key == (depth ? sceneDepth : sceneColor);
     t.width = std::max(key->width, 1u), t.height = std::max(key->height, 1u);
     t.physicalWidth = Physical(t.width, scaleX), t.physicalHeight = Physical(t.height, scaleY);
+    const u32 sampleCount = t.scene ? (samples ? samples : aaSamples) : 1;
     D3D11_TEXTURE2D_DESC td = {};
     td.Width = t.physicalWidth, td.Height = t.physicalHeight, td.MipLevels = 1, td.ArraySize = 1;
-    td.SampleDesc.Count = 1;
+    td.SampleDesc.Count = sampleCount;
     if (depth) {
         td.Format = DXGI_FORMAT_D24_UNORM_S8_UINT, td.BindFlags = D3D11_BIND_DEPTH_STENCIL;
         return SUCCEEDED(device->CreateTexture2D(&td, nullptr, &t.tex)) &&
                SUCCEEDED(device->CreateDepthStencilView(t.tex.Get(), nullptr, &t.dsv));
     }
-    td.Format = DXGI_FORMAT_R8G8B8A8_UNORM, td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-    if (FAILED(device->CreateTexture2D(&td, nullptr, &t.tex)) ||
-        FAILED(device->CreateRenderTargetView(t.tex.Get(), nullptr, &t.rtv)))
-        return false;
-    device->CreateShaderResourceView(t.tex.Get(), nullptr, &t.srv);
-    return true;
+    td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    td.SampleDesc.Count = 1;
+    td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    if (FAILED(device->CreateTexture2D(&td, nullptr, &t.tex))) return false;
+    if (sampleCount == 1) {
+        if (FAILED(device->CreateRenderTargetView(t.tex.Get(), nullptr, &t.rtv))) return false;
+        device->CreateShaderResourceView(t.tex.Get(), nullptr, &t.srv);
+        return true;
+    }
+    if (FAILED(device->CreateShaderResourceView(t.tex.Get(), nullptr, &t.srv))) return false;
+    td.SampleDesc.Count = sampleCount;
+    td.BindFlags = D3D11_BIND_RENDER_TARGET;
+    return SUCCEEDED(device->CreateTexture2D(&td, nullptr, &t.multisample)) &&
+           SUCCEEDED(device->CreateRenderTargetView(t.multisample.Get(), nullptr, &t.rtv));
+}
+
+void D3D11Device::Impl::ResolveTarget(Target& t) {
+    if (t.multisample) ctx->ResolveSubresource(t.tex.Get(), 0, t.multisample.Get(), 0, DXGI_FORMAT_R8G8B8A8_UNORM);
 }
 
 D3D11Device::Impl::Target* D3D11Device::Impl::ColorTarget(Resource* r) {
@@ -409,11 +443,12 @@ D3D11Device::Impl::Target* D3D11Device::Impl::ColorTarget(Resource* r) {
 
 D3D11Device::Impl::Target* D3D11Device::Impl::DepthTarget(Resource* r) {
     if (!r) return nullptr;
-    auto it = targets.find(r);
+    Resource* key = r->parent ? r->parent : r;
+    auto it = targets.find(key);
     if (it != targets.end()) return &it->second;
     Target t;
-    if (!MakeTarget(r, true, t)) return nullptr;
-    return &(targets[r] = std::move(t));
+    if (!MakeTarget(key, true, t)) return nullptr;
+    return &(targets[key] = std::move(t));
 }
 
 void D3D11Device::Impl::ApplyScale(double sx, double sy) {
@@ -423,9 +458,11 @@ void D3D11Device::Impl::ApplyScale(double sx, double sy) {
     for (auto& [key, old] : targets) {               // (in place: the map's nodes, and so the pointers, stay)
         Target t;
         if (!MakeTarget(key, old.depth, t)) continue;
-        if (!old.depth && old.srv && t.rtv)           // a rendered texture's content, at the new size
+        if (!old.depth && old.srv && t.rtv) {         // a rendered texture's content, at the new size
+            ResolveTarget(old);
             DrawQuad(t.rtv.Get(), D3D11_VIEWPORT{0, 0, f32(t.physicalWidth), f32(t.physicalHeight), 0, 1},
                      old.srv.Get(), blitSamplers[0].Get());
+        }
         old = std::move(t);
     }
 }
@@ -455,6 +492,7 @@ ID3D11ShaderResourceView* D3D11Device::Impl::Texture(Resource* r) {
     if (!r) return nullptr;
     if (r->rendered) {                                // a render target's texture: its D3D11 target
         Target* t = ColorTarget(r);
+        if (t) ResolveTarget(*t);
         return t ? t->srv.Get() : white.Get();
     }
     auto it = textures.find(r);
@@ -629,6 +667,7 @@ void D3D11Device::Swap(u32 flags) {
     if (!d.device) return;
     Impl::Target* bb = d.ColorTarget(backBuffer());
     if (!bb) return;
+    d.ResolveTarget(*bb);
     if (d.swapChain) {
         // The presentation: the window's buffer cleared to black, the back buffer drawn into the largest rectangle
         // of its own shape (4:3) that fits the client area, whole pixels, centred, with the chosen filter. None of
@@ -664,6 +703,69 @@ void D3D11Device::Resize(u32 width, u32 height) {
 }
 
 void D3D11Device::SetFilter(Filter filter) { impl_->filter = filter; }
+
+namespace {
+bool SceneMsaaSupported(ID3D11Device* device, u32 samples) {
+    if (samples == 1) return true;
+    UINT flags = 0;
+    if (FAILED(device->CheckFormatSupport(DXGI_FORMAT_R8G8B8A8_UNORM, &flags)) ||
+        (flags & (D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE)) !=
+            (D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE)) return false;
+    for (const DXGI_FORMAT format : {DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT}) {
+        UINT quality = 0;
+        if (FAILED(device->CheckMultisampleQualityLevels(format, samples, &quality)) || quality == 0) return false;
+    }
+    return true;
+}
+}
+
+bool D3D11Device::SetAnisotropy(u32 value) {
+    if (!ValidAnisotropy(value)) return false;
+    impl_->anisotropy = value;
+    return true;
+}
+
+bool D3D11Device::SetAntiAliasing(u32 samples, std::string& error) {
+    Impl& d = *impl_;
+    if (samples != 1 && samples != 2 && samples != 4 && samples != 8) {
+        error = "scene MSAA must be 1, 2, 4 or 8 samples";
+        return false;
+    }
+    if (!d.device) {
+        error = "D3D11 device is not initialised";
+        return false;
+    }
+    if (samples == d.aaSamples) { error.clear(); return true; }
+    if (!SceneMsaaSupported(d.device.Get(), samples)) {
+        error = "scene MSAA/resolve sample count is unsupported for colour/depth";
+        return false;
+    }
+    Impl::Target color, depth;
+    if (!d.MakeTarget(d.sceneColor, false, color, samples) ||
+        !d.MakeTarget(d.sceneDepth, true, depth, samples)) {
+        error = "scene MSAA colour/depth allocation failed";
+        return false;
+    }
+    auto colorEntry = d.targets.find(d.sceneColor), depthEntry = d.targets.find(d.sceneDepth);
+    if (colorEntry == d.targets.end() || depthEntry == d.targets.end()) {
+        error = "scene target pair is unavailable";
+        return false;
+    }
+    d.ctx->OMSetRenderTargets(0, nullptr, nullptr);
+    ID3D11ShaderResourceView* none[4] = {};
+    d.ctx->PSSetShaderResources(0, 4, none);
+    colorEntry->second = std::move(color);
+    depthEntry->second = std::move(depth);
+    d.aaSamples = samples;
+    error.clear();
+    return true;
+}
+
+bool D3D11Device::SetSceneWorld(bool world) {
+    const bool previous = impl_->sceneWorld;
+    impl_->sceneWorld = world;
+    return previous;
+}
 
 void D3D11Device::SetRenderScale(double factor) {
     Impl& d = *impl_;
@@ -846,21 +948,23 @@ void D3D11Device::Draw(u32 primitive, const u16* list, u32 count, u32 start) {
                 cb.texScale[s][0] = 1.0f / f32(t->width), cb.texScale[s][1] = 1.0f / f32(t->height);
                 cb.texScale[s][2] = rs[RS_YUVENABLE] != 0 ? 1.0f : 0.0f;   // NV097_SET_CONTROL0 bit 28
             }
+            const u32 anisotropy = StageAnisotropy(*t, ts, d.anisotropy, d.sceneWorld, hudTextures[s], rhw);
             std::vector<u32> key = {ts[TSS_ADDRESSU], ts[TSS_ADDRESSV], ts[TSS_ADDRESSW], ts[TSS_MAGFILTER],
                                     ts[TSS_MINFILTER], ts[TSS_MIPFILTER], ts[TSS_MIPMAPLODBIAS], ts[TSS_MAXMIPLEVEL],
-                                    ts[TSS_BORDERCOLOR]};
+                                    ts[TSS_BORDERCOLOR], anisotropy};
             auto& sp = d.samplers[key];
             if (!sp) {
                 D3D11_SAMPLER_DESC sd = {};
                 const bool magL = ts[TSS_MAGFILTER] >= 2, minL = ts[TSS_MINFILTER] >= 2, mipL = ts[TSS_MIPFILTER] >= 2;
-                sd.Filter = D3D11_FILTER((minL ? 0x10 : 0) | (magL ? 0x4 : 0) | (mipL ? 0x1 : 0));
+                sd.Filter = anisotropy > 1 ? D3D11_FILTER_ANISOTROPIC
+                                           : D3D11_FILTER((minL ? 0x10 : 0) | (magL ? 0x4 : 0) | (mipL ? 0x1 : 0));
                 sd.AddressU = Address(ts[TSS_ADDRESSU]), sd.AddressV = Address(ts[TSS_ADDRESSV]);
                 sd.AddressW = Address(ts[TSS_ADDRESSW]);
                 sd.MipLODBias = AsFloat(ts[TSS_MIPMAPLODBIAS]);
                 sd.MinLOD = f32(ts[TSS_MAXMIPLEVEL]);
                 sd.MaxLOD = ts[TSS_MIPFILTER] == 0 ? sd.MinLOD : D3D11_FLOAT32_MAX;   // MIPFILTER NONE: the top level
                 Color(ts[TSS_BORDERCOLOR], sd.BorderColor);
-                sd.MaxAnisotropy = 1, sd.ComparisonFunc = D3D11_COMPARISON_NEVER;
+                sd.MaxAnisotropy = anisotropy, sd.ComparisonFunc = D3D11_COMPARISON_NEVER;
                 d.device->CreateSamplerState(&sd, &sp);
             }
             smp[s] = sp.Get();
@@ -890,11 +994,14 @@ void D3D11Device::Draw(u32 primitive, const u16* list, u32 count, u32 start) {
     }
 
     // ---- the fixed state objects ----
+    Impl::Target* ct = d.ColorTarget(renderTarget);
+    const bool sceneMsaa = d.aaSamples > 1 && ct && ct->scene;
     std::vector<u32> bk = {rs[RS_ALPHABLENDENABLE], rs[RS_SRCBLEND], rs[RS_DESTBLEND], rs[RS_BLENDOP],
-                           rs[RS_COLORWRITEENABLE]};
+                           rs[RS_COLORWRITEENABLE], sceneMsaa && d.sceneWorld && rs[RS_ALPHATESTENABLE] ? 1u : 0u};
     auto& bs = d.blends[bk];
     if (!bs) {
         D3D11_BLEND_DESC bd = {};
+        bd.AlphaToCoverageEnable = bk.back() != 0;
         auto& t = bd.RenderTarget[0];
         t.BlendEnable = rs[RS_ALPHABLENDENABLE] != 0;
         t.SrcBlend = Blend(rs[RS_SRCBLEND]), t.DestBlend = Blend(rs[RS_DESTBLEND]);
@@ -922,11 +1029,12 @@ void D3D11Device::Draw(u32 primitive, const u16* list, u32 count, u32 start) {
         d.device->CreateDepthStencilState(&dd, &ds);
     }
     std::vector<u32> rk = {rs[RS_CULLMODE], rs[RS_FILLMODE], rs[RS_SOLIDOFFSETENABLE], rs[RS_POLYGONOFFSETZOFFSET],
-                           rs[RS_POLYGONOFFSETZSLOPESCALE], rs[RS_FRONTFACE]};
+                           rs[RS_POLYGONOFFSETZSLOPESCALE], rs[RS_FRONTFACE], sceneMsaa ? 1u : 0u};
     auto& rz = d.rasters[rk];
     if (!rz) {
         D3D11_RASTERIZER_DESC rd = {};
         rd.FillMode = rs[RS_FILLMODE] == 0x1B01 ? D3D11_FILL_WIREFRAME : D3D11_FILL_SOLID;
+        rd.MultisampleEnable = sceneMsaa;
         // CULLMODE 0x900 culls clockwise, 0x901 counter-clockwise triangles (screen space; FRONTFACE 0x901 swaps, L)
         const bool swap = rs[RS_FRONTFACE] == 0x901;
         rd.FrontCounterClockwise = FALSE;
@@ -941,7 +1049,6 @@ void D3D11Device::Draw(u32 primitive, const u16* list, u32 count, u32 start) {
     }
 
     // ---- the draw ----
-    Impl::Target* ct = d.ColorTarget(renderTarget);
     Impl::Target* dt = d.DepthTarget(depthStencil);
     if (!ct) return;
     ID3D11ShaderResourceView* none[4] = {};

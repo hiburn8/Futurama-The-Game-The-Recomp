@@ -4,6 +4,7 @@
 #include "engine/ni/NiCull.h"
 #include "engine/ni/NiRenderer.h"
 #include "engine/ni/NiStream.h"
+#include "render/nixbox/NiXBoxTexturePipeline.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -82,7 +83,7 @@ TextObject* TextObject::Create(u32 font, const ReadFileFn& readFile, ni::NiRende
     auto* t = new TextObject;                         // 0x00098DF0 (the members' defaults)
     // Init 0x00099CA0 (mode 0, the font's texture, its glyph data, 0)
     t->fontTexture = texture;                         // +0x11C
-    t->texturing = new ni::NiTexturingProperty;       // +0x18: the base texture, apply mode 2, filter 2
+    t->texturing = new render::nixbox::NiXBoxHudTexturingProperty;   // +0x18: base texture, apply mode 2, filter 2
     t->texturing->SetBaseTexture(texture.Get());
     t->texturing->applyMode = 2;
     t->texturing->maps[0].filterMode = 2;             // 0x0001D6B0(2)
@@ -248,7 +249,7 @@ void TextObject::UpdateCamera() {                     // orig: 0x00098D70
 void TextObject::Click() {                            // orig: 0x00098DB0
     if (!stringCount || !camera) return;
     // 0x00100CE0: the camera's Click culls its +0x15C (a scene-mode text's camera: its owner's scene)
-    ni::VisitForCulling(*camera, camera->sceneRoot ? camera->sceneRoot : node.Get());
+    ni::VisitForCulling(*camera, camera->sceneRoot ? camera->sceneRoot : node.Get(), false);
 }
 
 }  // namespace fut::text
