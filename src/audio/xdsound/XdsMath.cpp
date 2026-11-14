@@ -2,7 +2,9 @@
 // compare the branch implements (C3 C2 C0 of FCOM / FCOMP).
 #include "audio/xdsound/XdsMath.h"
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #include <emmintrin.h>
+#endif
 
 #include <cmath>
 #include <cstring>
@@ -36,7 +38,15 @@ constexpr f32 kFltMax = 3.4028234663852886e+38f; // 0x00295604
 f32 Tab(const std::vector<u32>& t, u32 i) { return i < t.size() ? FromBits(t[i]) : 0.0f; }
 
 // FISTP m32 with the round-to-nearest control word (indefinite 0x80000000 out of range)
-s32 Fistp(double v) { return _mm_cvtsd_si32(_mm_set_sd(v)); }
+s32 Fistp(double v) {
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+    return _mm_cvtsd_si32(_mm_set_sd(v));
+#else
+    const double r = std::nearbyint(v);
+    if (!(r >= -2147483648.0 && r <= 2147483647.0)) return static_cast<s32>(0x80000000u);
+    return static_cast<s32>(r);
+#endif
+}
 // orig: 0x00167110 _ftol: FISTP m64 with truncation, low dword (indefinite 0x8000000000000000 -> 0)
 u32 Ftol(double v) {
     if (!(v > -9223372036854775808.0 && v < 9223372036854775808.0)) return 0;
@@ -283,7 +293,14 @@ void StageDoppler(Source& s, const ListenerFrame& lf, const Buffer3D& p) {
 
 }  // namespace
 
-s32 Cvtt(f32 v) { return _mm_cvttss_si32(_mm_set_ss(v)); }
+s32 Cvtt(f32 v) {
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+    return _mm_cvttss_si32(_mm_set_ss(v));
+#else
+    if (!(v >= -2147483648.0f && v < 2147483648.0f)) return static_cast<s32>(0x80000000u);
+    return static_cast<s32>(v);
+#endif
+}
 
 s32 AmplitudeToLevel(f32 g) {                    // orig: 0x002497EA
     if (g <= 0.0f) return -10000;                // test ah, 0x41; jp

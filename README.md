@@ -79,6 +79,13 @@ cmake --install build --prefix dist
 
 `dist/FuturamaRecomp` runs with SDL3 and DXVK's two libraries beside it; you need a Vulkan 1.3 driver.
 
+**macOS.** You need Xcode Command Line Tools and CMake 3.25 or newer. SDL3 is found on the system (e.g. via Homebrew) or fetched and built by CMake; rendering uses Metal via SDL3's GPU API (`FUT_USE_SDL_GPU=ON` by default on macOS).
+
+```
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+```
+
 Have fun!
 
 ## Quality-of-life improvements
