@@ -56,7 +56,11 @@
 #include "platform/sdl/SdlSoundBackend.h"
 #include "platform/sdl/Window.h"
 #include "render/nixbox/NiXBoxRenderer.h"
+#ifdef FUT_USE_SDL_GPU
+#include "render/xd3d/SdlGpuDevice.h"
+#else
 #include "render/xd3d/D3D11Device.h"
+#endif
 
 
 #include <algorithm>
@@ -107,9 +111,14 @@ int main(int argc, char** argv) {
         std::fputs("\n", stderr);
         return 2;
     }
+#ifdef FUT_USE_SDL_GPU
+    using GpuDevice = render::xd3d::SdlGpuDevice;
+#else
+    using GpuDevice = render::xd3d::D3D11Device;
+#endif
     u32 width = 1280, height = 960;                   // the windowed size (--size WxH)
     bool fullscreen = true;                           // (--size / --windowed: a window; --fullscreen: full screen)
-    render::xd3d::D3D11Device::Filter filter = render::xd3d::D3D11Device::Filter::Linear;   // (--filter)
+    GpuDevice::Filter filter = GpuDevice::Filter::Linear;   // (--filter)
     double renderScale = 0;                           // (--render-scale: 0 = auto)
     double aspect = 4.0 / 3.0;                        // (--aspect: the canvas's shape; 0 = auto, the window's)
     std::filesystem::path saveDir = SaveFolder();     // (--saves <dir>)
@@ -125,8 +134,8 @@ int main(int argc, char** argv) {
                 return fail("--render-scale takes auto or a factor from 0.25 to 16", 2);
         } else if (a == "--filter" && i + 1 < argc) {
             const std::string f = argv[++i];
-            if (f == "nearest") filter = render::xd3d::D3D11Device::Filter::Nearest;
-            else if (f == "linear") filter = render::xd3d::D3D11Device::Filter::Linear;
+            if (f == "nearest") filter = GpuDevice::Filter::Nearest;
+            else if (f == "linear") filter = GpuDevice::Filter::Linear;
             else return fail("--filter takes linear or nearest", 2);
         } else if (a == "--aspect" && i + 1 < argc) {
             const std::string s = argv[++i];
@@ -152,10 +161,10 @@ int main(int argc, char** argv) {
     const std::vector<u8>& xbeFile = xbe::GameImage().Bytes();
     platform::Window window;
     if (!window.Create("Futurama", width, height, false, fullscreen)) return fail("window creation failed", 1);
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(FUT_USE_SDL_GPU)
     setenv("DXVK_WSI_DRIVER", "SDL3", 1);             // (DXVK-native: its window system is SDL3's; read at device creation)
 #endif
-    render::xd3d::D3D11Device device;                 // the decompiled renderer's D3D8 stream, executed
+    GpuDevice device;                                 // the decompiled renderer's D3D8 stream, executed
     {   // the canvas (engine/ni/ScreenCanvas.h): 640 x 480, or round(480 x aspect) rounded to even, 4:3 .. 32:9
         if (aspect <= 0) aspect = double(window.Width()) / std::max(window.Height(), 1u);
         aspect = std::clamp(aspect, 4.0 / 3.0, 32.0 / 9.0);
@@ -164,7 +173,11 @@ int main(int argc, char** argv) {
         device.SetCanvasSize(w, ni::ScreenCanvas::kHeight);   // (before Init: the frame buffers are made at the size)
     }
     device.SetRenderScale(renderScale);               // (before Init: the targets are made at the scale)
+#ifdef FUT_USE_SDL_GPU
+    if (!device.Init(window.Handle(), window.Width(), window.Height(), error)) return fail(error, 1);
+#else
     if (!device.Init(window.NativeHandle(), window.Width(), window.Height(), error)) return fail(error, 1);
+#endif
     device.SetFilter(filter);
     render::nixbox::NiXBoxRenderer renderer(device);  // the factory 0x0014C200 (App+0x104)
     platform::Gamepads gamepads;

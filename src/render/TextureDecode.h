@@ -14,6 +14,9 @@
 namespace fut::ni {
 class NiPixelData;
 }
+namespace fut::render::xd3d {
+struct Resource;
+}
 
 namespace fut::render {
 
@@ -25,5 +28,9 @@ struct DecodedTexture {
 };
 
 bool DecodePixelData(const ni::NiPixelData& data, DecodedTexture& out, std::string* error = nullptr);
+
+// Decodes Xbox texture manager texels (swizzled 16/32-bit formats and DXT1/DXT3/DXT5) into RGBA8 or BC1/BC2/BC3
+// mip levels. Returns false for unhandled formats or truncated data.
+bool DecodeXboxTexels(const xd3d::Resource& r, DecodedTexture& out);
 
 }  // namespace fut::render

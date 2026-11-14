@@ -2,7 +2,10 @@
 #include "render/TextureDecode.h"
 
 #include "engine/ni/NiObjects.h"
+#include "render/xd3d/XD3DDevice.h"
+#include "render/xd3d/XD3DTypes.h"
 
+#include <algorithm>
 #include <bit>
 #include <cstring>
 
@@ -67,6 +70,62 @@ bool DecodePixelData(const ni::NiPixelData& pd, DecodedTexture& out, std::string
         out.levels.push_back(std::move(rgba));
     }
     return !out.levels.empty() || fail("truncated pixel data");
+}
+
+bool DecodeXboxTexels(const xd3d::Resource& r, DecodedTexture& out) {
+    struct Masks { u32 a, r, g, b, bytes; };
+    Masks m{};
+    switch (r.format) {
+    case 0x02: m = {0x8000, 0x7C00, 0x03E0, 0x001F, 2}; break;   // A1R5G5B5
+    case 0x03: m = {0, 0x7C00, 0x03E0, 0x001F, 2}; break;        // X1R5G5B5
+    case 0x04: m = {0xF000, 0x0F00, 0x00F0, 0x000F, 2}; break;   // A4R4G4B4
+    case 0x05: m = {0, 0xF800, 0x07E0, 0x001F, 2}; break;        // R5G6B5
+    case 0x06: m = {0xFF000000u, 0xFF0000, 0xFF00, 0xFF, 4}; break;   // A8R8G8B8
+    case 0x07: m = {0, 0xFF0000, 0xFF00, 0xFF, 4}; break;        // X8R8G8B8
+    case 0x0C: case 0x0E: case 0x0F: break;
+    default: return false;
+    }
+    out = DecodedTexture();
+    out.width = r.width, out.height = r.height;
+    const bool block = r.format == 0x0C || r.format == 0x0E || r.format == 0x0F;
+    if (block) out.kind = r.format == 0x0C ? DecodedTexture::Kind::BC1 : r.format == 0x0E ? DecodedTexture::Kind::BC2
+                                                                                        : DecodedTexture::Kind::BC3;
+    size_t at = 0;
+    for (u32 l = 0, w = r.width, h = r.height; l < std::max(r.levels, 1u); ++l, w = std::max(w / 2, 1u),
+                                                                          h = std::max(h / 2, 1u)) {
+        const size_t bytes = xd3d::LevelBytes(r.format, w, h);
+        if (at + bytes > r.data.size()) return false;
+        const u8* src = r.data.data() + at;
+        if (block) {
+            out.levels.emplace_back(src, src + bytes);
+        } else {
+            u32 xmask = 0, ymask = 0;
+            for (u32 k = 1, bit = 1;; k <<= 1) {
+                bool used = false;
+                if (k < w) xmask |= bit, bit <<= 1, used = true;
+                if (k < h) ymask |= bit, bit <<= 1, used = true;
+                if (!used) break;
+            }
+            std::vector<u8> rgba(size_t(w) * h * 4);
+            u32 yoff = 0;
+            for (u32 y = 0; y < h; ++y) {
+                u32 xoff = 0;
+                for (u32 x = 0; x < w; ++x) {
+                    const u8* p = src + size_t(xoff | yoff) * m.bytes;
+                    const u32 v = m.bytes == 2 ? u32(p[0] | p[1] << 8)
+                                               : u32(p[0] | p[1] << 8 | p[2] << 16 | u32(p[3]) << 24);
+                    u8* d = &rgba[(size_t(y) * w + x) * 4];
+                    d[0] = Channel(v, m.r, 0), d[1] = Channel(v, m.g, 0), d[2] = Channel(v, m.b, 0);
+                    d[3] = Channel(v, m.a, 0xFF);
+                    xoff = (xoff - xmask) & xmask;
+                }
+                yoff = (yoff - ymask) & ymask;
+            }
+            out.levels.push_back(std::move(rgba));
+        }
+        at += bytes;
+    }
+    return true;
 }
 
 }  // namespace fut::render
